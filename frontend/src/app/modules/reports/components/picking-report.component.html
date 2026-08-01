@@ -1,0 +1,214 @@
+<div class="report-page">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────────── -->
+  <div class="page-header">
+    <div class="header-left">
+      <mat-icon class="page-icon">assessment</mat-icon>
+      <div>
+        <h1 class="page-title">GTP Picking Report</h1>
+        <p class="page-sub">Day-wise &amp; station-wise picking productivity</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Summary KPI tiles ──────────────────────────────────────────────────── -->
+  <div class="kpi-row" [class.stale]="loading">
+    <div class="kpi-tile" *ngFor="let tile of kpiTiles" [class.accent-good]="tile.accent === 'good'" [class.accent-warning]="tile.accent === 'warning'">
+      <mat-icon class="kpi-icon">{{ tile.icon }}</mat-icon>
+      <div class="kpi-body">
+        <div class="kpi-label">{{ tile.label }}</div>
+        <div class="kpi-value">{{ summary[tile.key] | number }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Filter bar ─────────────────────────────────────────────────────────── -->
+  <mat-card class="filter-card">
+    <mat-card-content>
+      <div class="filter-row">
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>From Date</mat-label>
+          <input matInput [matDatepicker]="fromPicker" [(ngModel)]="filterForm.fromDate" [max]="filterForm.toDate">
+          <mat-datepicker-toggle matSuffix [for]="fromPicker"></mat-datepicker-toggle>
+          <mat-datepicker #fromPicker></mat-datepicker>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>To Date</mat-label>
+          <input matInput [matDatepicker]="toPicker" [(ngModel)]="filterForm.toDate" [min]="filterForm.fromDate">
+          <mat-datepicker-toggle matSuffix [for]="toPicker"></mat-datepicker-toggle>
+          <mat-datepicker #toPicker></mat-datepicker>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>GTP Station</mat-label>
+          <mat-select [(ngModel)]="filterForm.stationId">
+            <mat-option [value]="null">All Stations</mat-option>
+            <mat-option *ngFor="let s of stationOptions" [value]="s">{{ s }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Picklist Number</mat-label>
+          <input matInput [(ngModel)]="filterForm.headerId" placeholder="Optional">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Operator / User</mat-label>
+          <mat-select [(ngModel)]="filterForm.operatorId">
+            <mat-option [value]="null">All Operators</mat-option>
+            <mat-option *ngFor="let op of operatorOptions" [value]="op.OperatorID">{{ op.OperatorName }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <button mat-raised-button color="primary" class="search-btn" [disabled]="loading" (click)="search()">
+          <mat-spinner *ngIf="loading" diameter="16" class="btn-spinner"></mat-spinner>
+          <span *ngIf="!loading">Search</span>
+        </button>
+      </div>
+
+      <div class="filter-error" *ngIf="filterError">{{ filterError }}</div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- ── Report table ───────────────────────────────────────────────────────── -->
+  <mat-card class="table-card">
+    <mat-card-content>
+
+      <div class="table-toolbar">
+        <mat-form-field appearance="outline" class="quick-filter">
+          <mat-label>Filter table…</mat-label>
+          <input matInput [ngModel]="quickFilterValue" (ngModelChange)="onQuickFilterChange($event)">
+          <mat-icon matSuffix matTooltip="Filters the rows currently loaded below — has no effect on Export">search</mat-icon>
+        </mat-form-field>
+
+        <div class="export-actions">
+          <button mat-stroked-button [disabled]="loading || exporting.csv || dataSource.data.length === 0" (click)="exportReport('csv')">
+            <mat-spinner *ngIf="exporting.csv" diameter="16" class="btn-spinner"></mat-spinner>
+            <span *ngIf="!exporting.csv"><mat-icon>table_view</mat-icon> CSV</span>
+          </button>
+          <button mat-stroked-button [disabled]="loading || exporting.xlsx || dataSource.data.length === 0" (click)="exportReport('xlsx')">
+            <mat-spinner *ngIf="exporting.xlsx" diameter="16" class="btn-spinner"></mat-spinner>
+            <span *ngIf="!exporting.xlsx"><mat-icon>grid_on</mat-icon> Excel</span>
+          </button>
+          <button mat-stroked-button [disabled]="loading || exporting.pdf || dataSource.data.length === 0" (click)="exportReport('pdf')">
+            <mat-spinner *ngIf="exporting.pdf" diameter="16" class="btn-spinner"></mat-spinner>
+            <span *ngIf="!exporting.pdf"><mat-icon>picture_as_pdf</mat-icon> PDF</span>
+          </button>
+        </div>
+      </div>
+      <p class="export-caption">Exports all rows matching the filters above (the quick filter above the table does not affect exports).</p>
+
+      <div class="table-scroll">
+        <table mat-table [dataSource]="dataSource" matSort class="report-table">
+
+          <ng-container matColumnDef="reportDate">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Report Date</th>
+            <td mat-cell *matCellDef="let row">{{ (row.reportDate + 'T00:00:00') | date:'dd MMM yyyy' }}</td>
+            <td mat-footer-cell *matFooterCellDef>Grand Total</td>
+          </ng-container>
+
+          <ng-container matColumnDef="gtpStation">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>GTP Station</th>
+            <td mat-cell *matCellDef="let row">{{ row.gtpStation }}</td>
+            <td mat-footer-cell *matFooterCellDef></td>
+          </ng-container>
+
+          <ng-container matColumnDef="totalPicklists">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Picklists Processed</th>
+            <td mat-cell *matCellDef="let row">{{ row.totalPicklists | number }}</td>
+            <td mat-footer-cell *matFooterCellDef>{{ summary.totalPicklists | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="totalOrders">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Orders Processed</th>
+            <td mat-cell *matCellDef="let row">{{ row.totalOrders | number }}</td>
+            <td mat-footer-cell *matFooterCellDef>{{ summary.totalOrders | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="totalItemsPicked">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Items Picked</th>
+            <td mat-cell *matCellDef="let row">{{ row.totalItemsPicked | number }}</td>
+            <td mat-footer-cell *matFooterCellDef>{{ summary.totalItemsPicked | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="totalPickedQty">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Picked Quantity</th>
+            <td mat-cell *matCellDef="let row">{{ row.totalPickedQty | number }}</td>
+            <td mat-footer-cell *matFooterCellDef>{{ summary.totalPickedQty | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="completedPicklists">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Completed</th>
+            <td mat-cell *matCellDef="let row"><span class="status-chip good">{{ row.completedPicklists | number }}</span></td>
+            <td mat-footer-cell *matFooterCellDef>{{ summary.completedPicklists | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="pendingPicklists">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Pending</th>
+            <td mat-cell *matCellDef="let row"><span class="status-chip warning">{{ row.pendingPicklists | number }}</span></td>
+            <td mat-footer-cell *matFooterCellDef>{{ summary.pendingPicklists | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="abandonedPicklists">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Abandoned</th>
+            <td mat-cell *matCellDef="let row">{{ row.abandonedPicklists | number }}</td>
+            <td mat-footer-cell *matFooterCellDef>{{ summary.abandonedPicklists | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="processingStartTime">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Processing Start</th>
+            <td mat-cell *matCellDef="let row">{{ row.processingStartTime ? (row.processingStartTime | date:'dd MMM yyyy HH:mm:ss') : '-' }}</td>
+            <td mat-footer-cell *matFooterCellDef>&mdash;</td>
+          </ng-container>
+
+          <ng-container matColumnDef="processingEndTime">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Processing End</th>
+            <td mat-cell *matCellDef="let row">{{ row.processingEndTime ? (row.processingEndTime | date:'dd MMM yyyy HH:mm:ss') : '-' }}</td>
+            <td mat-footer-cell *matFooterCellDef>&mdash;</td>
+          </ng-container>
+
+          <ng-container matColumnDef="totalProcessingDurationSeconds">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Total Duration</th>
+            <td mat-cell *matCellDef="let row">{{ formatDuration(row.totalProcessingDurationSeconds) }}</td>
+            <td mat-footer-cell *matFooterCellDef>&mdash;</td>
+          </ng-container>
+
+          <ng-container matColumnDef="avgPickingTimeSeconds">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Avg Picking Time</th>
+            <td mat-cell *matCellDef="let row">{{ formatDuration(row.avgPickingTimeSeconds) }}</td>
+            <td mat-footer-cell *matFooterCellDef>&mdash;</td>
+          </ng-container>
+
+          <ng-container matColumnDef="operatorNames">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Operator / User</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="operator-cell" [matTooltip]="row.operatorNames">{{ row.operatorNames || '-' }}</span>
+            </td>
+            <td mat-footer-cell *matFooterCellDef>&mdash;</td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+          <tr mat-footer-row *matFooterRowDef="displayedColumns" [class.hidden-footer]="dataSource.data.length === 0"></tr>
+        </table>
+      </div>
+
+      <mat-paginator [pageSizeOptions]="[10, 25, 50, 100]" [pageSize]="25" showFirstLastButtons></mat-paginator>
+
+      <div class="error-state" *ngIf="!loading && loadError">
+        <mat-icon>error_outline</mat-icon>
+        <span>{{ loadError }}</span>
+        <button mat-button color="primary" (click)="retry()">Retry</button>
+      </div>
+      <div class="empty-state" *ngIf="!loading && !loadError && dataSource.data.length === 0">
+        No picking activity found for the selected filters.
+      </div>
+      <div class="loading-state" *ngIf="loading">
+        <mat-spinner diameter="28"></mat-spinner>
+      </div>
+
+    </mat-card-content>
+  </mat-card>
+
+</div>

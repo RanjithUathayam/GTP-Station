@@ -1,0 +1,153 @@
+<div class="adam-config-page">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────────── -->
+  <div class="page-header">
+    <div class="header-left">
+      <mat-icon class="page-icon">tune</mat-icon>
+      <div>
+        <h1 class="page-title">ADAM Device Configuration</h1>
+        <p class="page-sub">ADAM-6052 IP, output channels &amp; MAC address lock, per device</p>
+      </div>
+    </div>
+    <button mat-raised-button color="primary" (click)="openAddForm()">
+      <mat-icon>add</mat-icon> Add Device
+    </button>
+  </div>
+
+  <!-- ── Add/Edit Form ──────────────────────────────────────────────────────── -->
+  <mat-card class="form-card" *ngIf="formOpen">
+    <mat-card-content>
+      <div class="form-title">{{ editing ? 'Edit Device Config — ' + editing.DeviceCode : 'Add Device Config' }}</div>
+
+      <!-- Each .form-row is its own flex container, so a wrapping hint in one
+           row can never overlap the row below it (unlike the previous single
+           CSS-grid layout, where a long Device Code hint bled into the MAC row). -->
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="grow">
+          <mat-label>Device Code</mat-label>
+          <input matInput [(ngModel)]="form.deviceCode" placeholder="e.g. STN-01" />
+          <mat-hint>Matched by the picking flow to select this device</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="grow">
+          <mat-label>ADAM IP Address</mat-label>
+          <input matInput [(ngModel)]="form.ipAddress" placeholder="10.0.210.87" />
+        </mat-form-field>
+      </div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Port</mat-label>
+          <input matInput type="number" [(ngModel)]="form.port" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Unit ID</mat-label>
+          <input matInput type="number" [(ngModel)]="form.unitId" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Output Start Ch.</mat-label>
+          <input matInput type="number" min="0" max="7" [(ngModel)]="form.outputStartChannel" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Output End Ch.</mat-label>
+          <input matInput type="number" min="0" max="7" [(ngModel)]="form.outputEndChannel" />
+          <mat-hint>DO 0-7</mat-hint>
+        </mat-form-field>
+      </div>
+
+      <div class="form-row mac-row">
+        <mat-form-field appearance="outline" class="grow-wide">
+          <mat-label>MAC Address</mat-label>
+          <input matInput [(ngModel)]="form.macAddress" placeholder="AA:BB:CC:DD:EE:FF" />
+          <mat-hint>Locks communication to this device — optional, leave blank to skip validation</mat-hint>
+        </mat-form-field>
+
+        <button mat-stroked-button class="detect-btn" [disabled]="detecting" (click)="detectMac()">
+          <mat-spinner *ngIf="detecting" diameter="16" class="btn-spinner"></mat-spinner>
+          <span *ngIf="!detecting">Detect MAC</span>
+        </button>
+      </div>
+
+      <div class="form-row">
+        <mat-slide-toggle [(ngModel)]="form.isActive">Active</mat-slide-toggle>
+      </div>
+
+      <div class="form-error" *ngIf="formError">{{ formError }}</div>
+
+      <div class="form-actions">
+        <button mat-button (click)="closeForm()">Cancel</button>
+        <button mat-raised-button color="primary" [disabled]="saving" (click)="save()">
+          <mat-spinner *ngIf="saving" diameter="16" class="btn-spinner"></mat-spinner>
+          <span *ngIf="!saving">{{ editing ? 'Save Changes' : 'Create' }}</span>
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- ── Device List ─────────────────────────────────────────────────────────── -->
+  <mat-card class="table-card">
+    <mat-card-content>
+      <table mat-table [dataSource]="configs" class="config-table">
+
+        <ng-container matColumnDef="code">
+          <th mat-header-cell *matHeaderCellDef>Device Code</th>
+          <td mat-cell *matCellDef="let c"><span class="station-code">{{ c.DeviceCode }}</span></td>
+        </ng-container>
+
+        <ng-container matColumnDef="ip">
+          <th mat-header-cell *matHeaderCellDef>ADAM IP</th>
+          <td mat-cell *matCellDef="let c"><code>{{ c.IpAddress }}:{{ c.Port }}</code> <span class="unit-badge">unit {{ c.UnitId }}</span></td>
+        </ng-container>
+
+        <ng-container matColumnDef="channels">
+          <th mat-header-cell *matHeaderCellDef>Output Series</th>
+          <td mat-cell *matCellDef="let c">D{{ c.OutputStartChannel }}–D{{ c.OutputEndChannel }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="mac">
+          <th mat-header-cell *matHeaderCellDef>MAC Address</th>
+          <td mat-cell *matCellDef="let c">
+            <code *ngIf="c.MacAddress">{{ c.MacAddress }}</code>
+            <span class="mac-missing" *ngIf="!c.MacAddress">Not locked</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="active">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let c">
+            <span class="status-chip" [class.active]="c.IsActive">{{ c.IsActive ? 'Active' : 'Inactive' }}</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let c">
+            <button mat-icon-button matTooltip="Edit" (click)="openEditForm(c)"><mat-icon>edit</mat-icon></button>
+            <button mat-icon-button matTooltip="Deactivate" (click)="deleteConfig(c)" [disabled]="!c.IsActive">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+      </table>
+
+      <div class="error-state" *ngIf="!loading && loadError">
+        <mat-icon>error_outline</mat-icon>
+        <span>{{ loadError }}</span>
+        <button mat-button color="primary" (click)="refresh()">Retry</button>
+      </div>
+      <div class="empty-state" *ngIf="!loading && !loadError && configs.length === 0">
+        No ADAM device configurations found. Please click "Add Device" to create a new configuration.
+      </div>
+      <div class="loading-state" *ngIf="loading">
+        <mat-spinner diameter="28"></mat-spinner>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+</div>

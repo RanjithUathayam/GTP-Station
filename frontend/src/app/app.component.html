@@ -1,0 +1,42 @@
+<mat-sidenav-container class="shell-container">
+
+  <!-- Sidebar -->
+  <mat-sidenav #sidenav [opened]="sidenavOpen" mode="side" class="sidenav">
+    <div class="sidenav-header">
+      <mat-icon class="logo-icon">warehouse</mat-icon>
+      <div>
+        <div class="brand-name">GTP Station</div>
+        <div class="brand-sub">Put-to-Light System</div>
+      </div>
+    </div>
+
+    <mat-nav-list class="nav-list">
+      <a mat-list-item
+         *ngFor="let item of navItems"
+         [routerLink]="item.path"
+         [class.active-nav]="isActive(item.path)"
+         class="nav-item">
+        <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+        <span matListItemTitle>{{ item.label }}</span>
+      </a>
+    </mat-nav-list>
+  </mat-sidenav>
+
+  <!-- Main content -->
+  <mat-sidenav-content class="main-content">
+    <mat-toolbar color="primary" class="top-bar">
+      <button mat-icon-button (click)="sidenav.toggle()">
+        <mat-icon>menu</mat-icon>
+      </button>
+      <span class="toolbar-spacer"></span>
+      <button mat-icon-button routerLink="/put-to-light" matTooltip="Go to Operator View">
+        <mat-icon>lightbulb</mat-icon>
+      </button>
+    </mat-toolbar>
+
+    <div class="content-area">
+      <router-outlet></router-outlet>
+    </div>
+  </mat-sidenav-content>
+
+</mat-sidenav-container>

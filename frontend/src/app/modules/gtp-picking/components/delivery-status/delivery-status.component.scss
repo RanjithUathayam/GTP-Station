@@ -1,0 +1,372 @@
+$bg:       #0d1117;
+$surface:  #161b22;
+$surface2: #1c2128;
+$border:   rgba(255,255,255,.08);
+$green:    #69f0ae;
+$amber:    #ffb300;
+$red:      #ff5252;
+$blue:     #448aff;
+$txt:      rgba(255,255,255,.87);
+$muted:    rgba(255,255,255,.54);
+
+:host { display: block; }
+
+.pls-page {
+  padding: 20px 24px;
+  min-height: 100%;
+  background: $bg;
+  color: $txt;
+}
+
+// ── Header ────────────────────────────────────────────────
+.pls-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.pls-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .3px;
+
+  mat-icon { color: $green; font-size: 22px; }
+}
+
+.pls-refresh-btn { color: $muted; &:hover { color: $txt; } }
+
+// ── Filters ───────────────────────────────────────────────
+.pls-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.pls-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid $border;
+  border-radius: 20px;
+  background: $surface;
+  color: $muted;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+
+  &:hover { border-color: rgba(255,255,255,.18); color: $txt; }
+  &.active { border-color: $green; color: $green; background: rgba($green,.08); }
+}
+
+.pls-filter-count {
+  background: rgba(255,255,255,.1);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  &.dot-inprogress { background: $amber; }
+  &.dot-done       { background: $green; }
+}
+
+// ── State boxes (loading / error / empty) ─────────────────
+.pls-state-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 60px 20px;
+  color: $muted;
+  font-size: 14px;
+
+  mat-spinner { opacity: .7; }
+}
+
+.pls-error-box { color: $red; mat-icon { font-size: 32px; } }
+
+.pls-empty-icon {
+  font-size: 40px;
+  width: 40px;
+  height: 40px;
+  opacity: .3;
+}
+
+// ── Session list ──────────────────────────────────────────
+.pls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+// ── Session card ──────────────────────────────────────────
+.pls-card {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color .15s;
+
+  &:hover        { border-color: rgba(255,255,255,.14); }
+  &.is-expanded  { border-color: rgba(255,255,255,.18); }
+}
+
+// ── Card head ─────────────────────────────────────────────
+.pls-card-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover { background: rgba(255,255,255,.03); }
+}
+
+.plsch-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.plsch-id {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.plsch-badge {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+
+  &.badge-ip   { background: rgba($amber,.15); color: $amber; }
+  &.badge-done { background: rgba($green,.15); color: $green; }
+}
+
+.plsch-del-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+
+  mat-icon { font-size: 13px; width: 13px; height: 13px; }
+
+  &.del-ok   { background: rgba($green,.12); color: $green; }
+  &.del-fail { background: rgba($red,.12);   color: $red;   }
+}
+
+.plsch-stats {
+  display: flex;
+  gap: 18px;
+}
+
+.plsch-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.plsch-stat-label {
+  font-size: 10px;
+  color: $muted;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.plsch-stat-val {
+  font-size: 15px;
+  font-weight: 700;
+  &.green { color: $green; }
+  &.amber { color: $amber; }
+}
+
+.plsch-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.plsch-date {
+  font-size: 11px;
+  color: $muted;
+  text-align: right;
+  line-height: 1.4;
+}
+
+.plsch-chevron {
+  color: $muted;
+  transition: transform .2s;
+  font-size: 20px;
+  &.rotated { transform: rotate(180deg); }
+}
+
+// ── Collapsed quick action ────────────────────────────────
+.pls-card-quick {
+  padding: 0 16px 12px;
+}
+
+// ── Party list (expanded) ─────────────────────────────────
+.pls-party-list { padding: 0 16px 12px; }
+
+.ppl-divider {
+  height: 1px;
+  background: $border;
+  margin-bottom: 12px;
+}
+
+.ppl-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: $surface2;
+  margin-bottom: 6px;
+
+  &:last-child { margin-bottom: 0; }
+}
+
+.ppl-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ppl-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ppl-code {
+  font-size: 11px;
+  color: $muted;
+  margin-top: 2px;
+}
+
+.ppl-qty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ppl-qty-num {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ppl-qty-sep { color: $muted; margin: 0 1px; }
+
+.ppl-pick-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+
+  &.pbadge-done { background: rgba($green,.15); color: $green; }
+  &.pbadge-ip   { background: rgba($amber,.15); color: $amber; }
+}
+
+.ppl-delivery {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ppl-del-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+
+  mat-icon { font-size: 13px; width: 13px; height: 13px; }
+
+  &.del-success { background: rgba($green,.15); color: $green; }
+  &.del-failed  { background: rgba($red,.15);   color: $red;   }
+  &.del-pending { background: rgba($amber,.15); color: $amber; }
+  &.del-none    { background: rgba(255,255,255,.06); color: $muted; }
+}
+
+.ppl-doc-num {
+  font-size: 11px;
+  color: $blue;
+  font-weight: 500;
+}
+
+.ppl-err-tip {
+  color: $red;
+  cursor: help;
+  mat-icon { font-size: 15px; width: 15px; height: 15px; vertical-align: middle; }
+}
+
+.ppl-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ppl-doc-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: $green;
+  mat-icon { font-size: 15px; width: 15px; height: 15px; }
+}
+
+// ── Action buttons ────────────────────────────────────────
+.btn-continue {
+  font-size: 12px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  padding: 0 12px !important;
+  border-color: $amber !important;
+  color: $amber !important;
+
+  mat-icon { font-size: 16px; margin-right: 4px; vertical-align: middle; }
+  &:hover { background: rgba($amber,.08) !important; }
+}
+
+.btn-post {
+  font-size: 12px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  padding: 0 12px !important;
+  border-color: $blue !important;
+  color: $blue !important;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  mat-icon  { font-size: 16px; }
+  &:hover   { background: rgba($blue,.08) !important; }
+  &:disabled { opacity: .5; }
+}

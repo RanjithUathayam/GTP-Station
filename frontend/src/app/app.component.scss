@@ -1,0 +1,72 @@
+.shell-container {
+  height: 100vh;
+}
+
+.sidenav {
+  width: var(--sidebar-width);
+  background: #1a237e;
+  color: white;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidenav-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.15);
+
+  .logo-icon {
+    font-size: 36px;
+    width: 36px;
+    height: 36px;
+    color: #ffd54f;
+  }
+
+  .brand-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: white;
+    line-height: 1.2;
+  }
+
+  .brand-sub {
+    font-size: 11px;
+    color: rgba(255,255,255,.6);
+  }
+}
+
+.nav-list {
+  padding-top: 8px;
+}
+
+.nav-item {
+  color: rgba(255,255,255,.75);
+  border-radius: 8px;
+  margin: 2px 8px;
+  transition: background .2s;
+
+  mat-icon { color: rgba(255,255,255,.6); }
+
+  &:hover { background: rgba(255,255,255,.1); color: white; }
+
+  &.active-nav {
+    background: rgba(255,255,255,.2);
+    color: white;
+    mat-icon { color: #ffd54f; }
+  }
+}
+
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+
+.toolbar-spacer { flex: 1; }
+
+.main-content { overflow-y: auto; }
+
+.content-area { min-height: calc(100vh - 64px); }

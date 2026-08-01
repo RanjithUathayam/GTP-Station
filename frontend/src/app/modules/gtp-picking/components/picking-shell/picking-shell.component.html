@@ -1,0 +1,378 @@
+<div class="pick-shell">
+
+  <!-- ════════════════════════════════════════════════════════
+       STEP 1 — Scan Picklist Number
+  ═══════════════════════════════════════════════════════════ -->
+  <ng-container *ngIf="view === 'scan-picklist'">
+    <div class="pick-bar">
+      <mat-icon class="bar-logo">inventory</mat-icon>
+      <span class="bar-title">GTP Station</span>
+      <span class="bar-sub">— Picking Process</span>
+    </div>
+
+    <div class="center-layout">
+      <div class="scan-card">
+        <div class="scan-icon-ring">
+          <div class="ring-pulse"></div>
+          <mat-icon>barcode_reader</mat-icon>
+        </div>
+        <h2 class="scan-heading">Scan Picklist Barcode</h2>
+        <p class="scan-sub">Scan or enter the picklist number to load order details</p>
+
+        <div class="input-group">
+          <mat-form-field appearance="outline" class="pick-field station-field">
+            <mat-label>GTP Station *</mat-label>
+            <mat-select [ngModel]="selectedStation" (ngModelChange)="onStationChange($event)"
+                        [disabled]="!stations.length">
+              <mat-option *ngFor="let code of stations" [value]="code">{{ code }}</mat-option>
+            </mat-select>
+            <mat-hint *ngIf="!stations.length">No active ADAM devices — configure one in ADAM Device Configuration</mat-hint>
+          </mat-form-field>
+
+          <!-- Pre-flight device check — config details shown, scanning blocked until usable=true -->
+          <div class="station-status validating" *ngIf="validatingStation">
+            <mat-progress-spinner diameter="16" mode="indeterminate"></mat-progress-spinner>
+            <span>Validating station device…</span>
+          </div>
+
+          <div class="station-status ready" *ngIf="!validatingStation && stationReady">
+            <mat-icon>verified</mat-icon>
+            <div class="status-details">
+              <span class="status-line"><b>IP</b> {{ deviceStatus?.ipAddress }}:{{ deviceStatus?.port }}</span>
+              <span class="status-line"><b>Output Series</b> D{{ deviceStatus?.outputStartChannel }}–D{{ deviceStatus?.outputEndChannel }}</span>
+              <span class="status-line"><b>MAC</b> {{ deviceStatus?.macAddress || 'Not locked' }}</span>
+              <span class="status-line"><b>Status</b> Active</span>
+            </div>
+          </div>
+
+          <div class="station-status not-ready" *ngIf="!validatingStation && deviceStatus && !stationReady">
+            <mat-icon>block</mat-icon>
+            <span>{{ deviceStatus.reason }}</span>
+          </div>
+
+          <mat-form-field appearance="outline" class="pick-field">
+            <mat-label>Picklist Number</mat-label>
+            <input matInput #picklistInputEl
+                   [(ngModel)]="picklistInput"
+                   (keydown.enter)="loadPicklist()"
+                   [disabled]="picklistLoading || !stationReady"
+                   placeholder="e.g. 69958"
+                   autocomplete="off"
+                   autofocus>
+            <mat-icon matSuffix>qr_code_2</mat-icon>
+          </mat-form-field>
+
+          <div class="err-msg" *ngIf="picklistError">
+            <mat-icon>error_outline</mat-icon> {{ picklistError }}
+          </div>
+
+          <button mat-raised-button class="load-btn"
+                  [disabled]="!picklistInput || picklistLoading || !stationReady"
+                  (click)="loadPicklist()">
+            <mat-progress-spinner *ngIf="picklistLoading" diameter="20" mode="indeterminate"></mat-progress-spinner>
+            <ng-container *ngIf="!picklistLoading">
+              <mat-icon>search</mat-icon> Load Picklist
+            </ng-container>
+          </button>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+
+
+
+  <!-- ════════════════════════════════════════════════════════
+       STEP 3 — Picking Board (PTL style)
+  ═══════════════════════════════════════════════════════════ -->
+  <ng-container *ngIf="view === 'picking-board'">
+    <div class="pick-bar">
+      <button mat-icon-button class="back-btn" (click)="backToParties()" matTooltip="Back to parties">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <mat-icon class="bar-logo">inventory</mat-icon>
+      <span class="bar-title">Picking</span>
+      <span class="bar-sep" *ngIf="session?.stationId">›</span>
+      <span class="bar-station" *ngIf="session?.stationId as stationId" matTooltip="ADAM device driving this station's lights">
+        {{ stationId }}
+      </span>
+      <span class="bar-sep">›</span>
+      <span class="bar-hl">{{ session?.headerId }}</span>
+      <span class="bar-sep">›</span>
+      <span class="bar-party">{{ currentParty?.cardName }}</span>
+      <span class="bar-spacer"></span>
+      <span class="bar-join-order" *ngIf="session?.joinOrder as joinOrder" matTooltip="Join Order">
+        Join Order: <strong>{{ joinOrder }}</strong>
+      </span>
+      <div class="bar-progress" *ngIf="currentParty">
+        <span>{{ doneItemCount(currentParty) }}/{{ currentParty.items.length }} items</span>
+        <mat-progress-bar mode="determinate"
+          [value]="partyProgress(currentParty)" class="bar-prog-bar"></mat-progress-bar>
+        <span class="bar-pct">{{ partyProgress(currentParty) }}%</span>
+      </div>
+    </div>
+
+    <!-- ── PTL Board ────────────────────────────────────────── -->
+    <div class="board-ptl">
+
+      <!-- Scan strip (full width) -->
+      <div class="scan-strip ptl-strip" [ngClass]="'strip-' + scanFeedback.state">
+        <span class="strip-dot" [class.dot-pulse]="scanFeedback.state === 'ready'"></span>
+        <mat-icon class="strip-icon">{{ scanFeedbackIcon() }}</mat-icon>
+        <span class="strip-msg">
+          <ng-container *ngIf="scanFeedback.state === 'ready'">
+            SCANNER READY &nbsp;·&nbsp; Scan item barcode to pick
+          </ng-container>
+          <ng-container *ngIf="scanFeedback.state !== 'ready'">{{ scanFeedback.message }}</ng-container>
+        </span>
+        <mat-progress-spinner *ngIf="scanFeedback.state === 'processing'"
+          diameter="14" mode="indeterminate" class="strip-spin"></mat-progress-spinner>
+      </div>
+
+      <!-- Body: left party panel + main board -->
+      <div class="ptl-body">
+
+        <!-- ── Left: Party-wise summary panel ── -->
+        <div class="ptl-party-panel">
+          <div class="ppp-header">
+            <mat-icon>people</mat-icon>
+            <span>Party Summary</span>
+          </div>
+          <div class="ppp-card" *ngFor="let party of session?.parties"
+               [class.ppp-active]="party.cardCode === currentParty?.cardCode"
+               [class.ppp-done]="party.status === 'completed'">
+            <div class="ppp-status-bar"></div>
+            <div class="ppp-name">{{ party.cardName }}</div>
+            <div class="ppp-code">{{ party.cardCode }}</div>
+            <div class="ppp-stats">
+              <div class="ppp-stat">
+                <span class="pps-lbl">Total Qty</span>
+                <span class="pps-val">{{ party.totalRequiredQty }}</span>
+              </div>
+              <div class="ppp-stat">
+                <span class="pps-lbl">Picked Qty</span>
+                <span class="pps-val pps-picked">{{ party.totalPickedQty }}</span>
+              </div>
+              <div class="ppp-stat">
+                <span class="pps-lbl">Remaining</span>
+                <span class="pps-val pps-remain">{{ party.totalRequiredQty - party.totalPickedQty }}</span>
+              </div>
+            </div>
+            <div class="ppp-prog-track">
+              <div class="ppp-prog-fill" [style.width.%]="partyProgress(party)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Right: Main picking board ── -->
+        <div class="ptl-board-main">
+
+          <!-- Top card -->
+          <div class="ptl-top-area">
+            <div class="ptl-top-card" #topCardEl *ngIf="currentItem; else partyAllDone">
+
+              <div class="ptc-picklist">
+                Picklist: <strong>{{ session?.headerId }}</strong>
+                <span class="ptc-seq">Item {{ currentItemIndex() }}/{{ currentParty?.items?.length }}</span>
+              </div>
+
+              <div class="ptc-itemname"><strong>{{ itemDisplayLabel(currentItem) }}</strong></div>
+
+              <div class="ptc-progress">
+                <div class="ptc-prog-summary">
+                  <span>Total Qty: <strong>{{ currentItem.requiredQty }}</strong></span>
+                  <span>Picked: <strong>{{ currentItem.pickedQty }}</strong></span>
+                  <span>Remaining: <strong>{{ currentItem.requiredQty - currentItem.pickedQty }}</strong></span>
+                </div>
+                <div class="ptc-prog-track">
+                  <div class="ptc-prog-fill" [style.width.%]="itemProgress(currentItem)"></div>
+                </div>
+              </div>
+
+              <!-- Partwise picked details — always visible -->
+              <div class="ptc-scan-parts">
+                <div class="psp-header">
+                  <span class="psp-title">Picked Details</span>
+                  <span class="psp-count">{{ currentItem.scannedParts.length }} scan(s)</span>
+                </div>
+                <ng-container *ngIf="currentItem.scannedParts.length; else noScansYet">
+                  <div class="psp-list">
+                    <div class="psp-row" *ngFor="let part of currentItem.scannedParts; let i = index">
+                      <span class="psp-num">{{ i + 1 }}.</span>
+                      <span class="psp-uniqueno">Uniqueno: {{ part.uniqueNumber }}</span>
+                      <span class="psp-qty">Qty: {{ part.qty }}</span>
+                    </div>
+                  </div>
+                </ng-container>
+                <ng-template #noScansYet>
+                  <div class="psp-empty">No scans yet — scan barcode to start picking</div>
+                </ng-template>
+              </div>
+
+              <!-- Hidden scan input — always focusable, scanner-only (see onScanKeydown) -->
+              <input #itemScanInput class="ptl-scan-input"
+                     [(ngModel)]="scanInput"
+                     (keydown.enter)="processItemScan()"
+                     (keydown)="onScanKeydown($event)"
+                     (paste)="onScanPaste($event)"
+                     (blur)="onScanInputBlur()"
+                     [disabled]="scanLoading"
+                     placeholder="Scan barcode here…"
+                     autocomplete="off">
+            </div>
+
+            <ng-template #partyAllDone>
+              <div class="ptl-top-card ptc-done">
+                <mat-icon class="ptc-done-icon">check_circle</mat-icon>
+                <div class="ptc-done-msg">All items picked for <strong>{{ currentParty?.cardName }}</strong></div>
+                <button mat-raised-button class="next-party-btn" (click)="nextParty()">
+                  <mat-icon>arrow_forward</mat-icon> Next Party
+                </button>
+              </div>
+            </ng-template>
+          </div>
+
+          <!-- SVG connector (scoped to ptl-board-main) -->
+          <svg class="ptl-svg"
+               [attr.width]="svgW" [attr.height]="svgH"
+               xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="pk-arrow" markerWidth="10" markerHeight="7"
+                      refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#4fc3f7"/>
+              </marker>
+              <filter id="pk-glow">
+                <feGaussianBlur stdDeviation="2" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <path *ngIf="svgPath" [attr.d]="svgPath"
+                  fill="none" stroke="#4fc3f7" stroke-width="5" opacity="0.18" filter="url(#pk-glow)"/>
+            <path *ngIf="svgPath" [attr.d]="svgPath" id="ptl-flow-path"
+                  fill="none" stroke="#4fc3f7" stroke-width="2"
+                  stroke-dasharray="8 4"
+                  marker-end="url(#pk-arrow)"
+                  class="ptl-connector-line"/>
+            <circle *ngIf="svgPath" r="5" fill="#69f0ae">
+              <animateMotion dur="1.4s" repeatCount="indefinite">
+                <mpath href="#ptl-flow-path"/>
+              </animateMotion>
+            </circle>
+          </svg>
+
+          <!-- Party bins row -->
+          <div class="ptl-bins-row">
+            <div class="ptl-bin"
+                 *ngFor="let party of session?.parties; let i = index"
+                 [class.bin-active]="party.cardCode === currentParty?.cardCode"
+                 [class.bin-done]="party.status === 'completed'"
+                 [class.bin-flash]="party.cardCode === currentParty?.cardCode && scanFlash"
+                 #binEl>
+
+              <ng-container *ngIf="party.cardCode === currentParty?.cardCode; else idleBin">
+                <div class="bin-qty-label">QTY</div>
+                <div class="bin-qty-val">{{ currentItem ? (currentItem.requiredQty - currentItem.pickedQty) : 0 }}</div>
+                <div class="bin-name">{{ party.cardName }}</div>
+                <div class="bin-code">{{ party.cardCode }}</div>
+                <div class="bin-active-bar"></div>
+              </ng-container>
+
+              <ng-template #idleBin>
+                <mat-icon class="bin-status-icon"
+                  [class.bin-icon-done]="party.status === 'completed'"
+                  [class.bin-icon-wait]="party.status !== 'completed'">
+                  {{ party.status === 'completed' ? 'check_circle' : 'hourglass_empty' }}
+                </mat-icon>
+                <div class="bin-name">{{ party.cardName }}</div>
+                <div class="bin-code">{{ party.cardCode }}</div>
+              </ng-template>
+
+            </div>
+          </div>
+
+        </div><!-- /ptl-board-main -->
+      </div><!-- /ptl-body -->
+
+      <!-- Full picklist — all parties and their items -->
+      <div class="ptl-item-strip" *ngIf="session">
+        <ng-container *ngFor="let party of session.parties">
+          <div class="pis-party-sep"
+               [class.pis-sep-active]="party.cardCode === currentParty?.cardCode"
+               [class.pis-sep-done]="party.status === 'completed'">
+            <mat-icon>{{ party.status === 'completed' ? 'check_circle' : 'store' }}</mat-icon>
+            {{ party.cardCode }}
+          </div>
+          <div class="pis-item"
+               *ngFor="let item of party.items"
+               [class.pis-done]="isItemDone(item)"
+               [class.pis-active]="item.itemCode === currentItem?.itemCode && party.cardCode === currentParty?.cardCode">
+            <mat-icon>{{ isItemDone(item) ? 'check_circle' : (item.itemCode === currentItem?.itemCode && party.cardCode === currentParty?.cardCode) ? 'adjust' : 'radio_button_unchecked' }}</mat-icon>
+            <span class="pis-name" [matTooltip]="itemDisplayLabel(item)">{{ itemDisplayLabel(item) }}</span>
+            <span class="pis-qty">{{ item.pickedQty }}/{{ item.requiredQty }}</span>
+          </div>
+        </ng-container>
+      </div>
+
+    </div>
+  </ng-container>
+
+
+  <!-- ════════════════════════════════════════════════════════
+       COMPLETED STATE
+  ═══════════════════════════════════════════════════════════ -->
+  <ng-container *ngIf="view === 'completed'">
+    <div class="pick-bar">
+      <mat-icon class="bar-logo">inventory</mat-icon>
+      <span class="bar-title">GTP Station</span>
+    </div>
+
+    <div class="center-layout">
+      <div class="completed-card">
+        <div class="cc-icon-ring">
+          <mat-icon class="cc-check">task_alt</mat-icon>
+        </div>
+        <h2 class="cc-heading">Picklist Completed!</h2>
+        <div class="cc-picklist">{{ session?.headerId }}</div>
+
+        <div class="cc-stats">
+          <div class="cc-stat">
+            <span class="cs-val">{{ session?.totalParties }}</span>
+            <span class="cs-lbl">Parties</span>
+          </div>
+          <div class="cc-stat">
+            <span class="cs-val">{{ totalItemsCount() }}</span>
+            <span class="cs-lbl">Total Items</span>
+          </div>
+          <div class="cc-stat">
+            <span class="cs-val">{{ totalQtyPicked() }}</span>
+            <span class="cs-lbl">Total Qty Picked</span>
+          </div>
+        </div>
+
+        <div class="cc-party-list">
+          <div class="cc-party-row" *ngFor="let p of session?.parties">
+            <mat-icon class="cp-icon">check_circle</mat-icon>
+            <span class="cp-name">{{ p.cardName }}</span>
+            <span class="cp-qty">{{ p.totalPickedQty | number:'1.0-0' }} / {{ p.totalRequiredQty | number:'1.0-0' }}</span>
+          </div>
+        </div>
+
+        <button mat-raised-button class="start-over-btn" (click)="startOver()">
+          <mat-icon>replay</mat-icon> Scan New Picklist
+        </button>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ── Scan Error Popup (centered overlay) ────────────────────── -->
+  <div class="scan-error-popup"
+       *ngIf="scanFeedback.state === 'error' || scanFeedback.state === 'duplicate' || scanFeedback.state === 'invalid'"
+       [ngClass]="'popup-' + scanFeedback.state">
+    <div class="sep-backdrop"></div>
+    <div class="sep-card">
+      <mat-icon class="sep-icon">{{ scanFeedbackIcon() }}</mat-icon>
+      <p class="sep-msg">{{ scanFeedback.message }}</p>
+    </div>
+  </div>
+
+</div>

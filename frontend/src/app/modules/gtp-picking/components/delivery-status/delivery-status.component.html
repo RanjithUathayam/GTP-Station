@@ -1,0 +1,175 @@
+<div class="pls-page">
+
+  <!-- Page header -->
+  <div class="pls-header">
+    <div class="pls-title">
+      <mat-icon>list_alt</mat-icon>
+      <span>Delivery Status</span>
+    </div>
+    <button mat-icon-button (click)="load()" matTooltip="Refresh" class="pls-refresh-btn">
+      <mat-icon>refresh</mat-icon>
+    </button>
+  </div>
+
+  <!-- Filters -->
+  <div class="pls-filters">
+    <button class="pls-filter-btn" [class.active]="filterStatus === 'All'"
+            (click)="setFilter('All')">All
+      <span class="pls-filter-count">{{ sessions.length }}</span>
+    </button>
+    <button class="pls-filter-btn" [class.active]="filterStatus === 'InProgress'"
+            (click)="setFilter('InProgress')">
+      <span class="dot dot-inprogress"></span>In Progress
+      <span class="pls-filter-count">{{ countByStatus('InProgress') }}</span>
+    </button>
+    <button class="pls-filter-btn" [class.active]="filterStatus === 'Completed'"
+            (click)="setFilter('Completed')">
+      <span class="dot dot-done"></span>Completed
+      <span class="pls-filter-count">{{ countByStatus('Completed') }}</span>
+    </button>
+  </div>
+
+  <!-- Loading -->
+  <div *ngIf="loading" class="pls-state-box">
+    <mat-spinner diameter="36"></mat-spinner>
+    <span>Loading delivery status…</span>
+  </div>
+
+  <!-- Error -->
+  <div *ngIf="!loading && error" class="pls-state-box pls-error-box">
+    <mat-icon>error_outline</mat-icon>
+    <span>{{ error }}</span>
+    <button mat-stroked-button (click)="load()">Retry</button>
+  </div>
+
+  <!-- Empty -->
+  <div *ngIf="!loading && !error && filteredSessions.length === 0" class="pls-state-box">
+    <mat-icon class="pls-empty-icon">inbox</mat-icon>
+    <span>No delivery records found</span>
+  </div>
+
+  <!-- Session list -->
+  <div *ngIf="!loading && !error" class="pls-list">
+    <div *ngFor="let s of filteredSessions" class="pls-card" [class.is-expanded]="s.expanded">
+
+      <!-- Card header row (clickable to expand) -->
+      <div class="pls-card-head" (click)="toggle(s)">
+
+        <div class="plsch-left">
+          <span class="plsch-id">{{ s.headerId }}</span>
+          <span class="plsch-badge"
+                [class.badge-ip]="s.sessionStatus === 'InProgress'"
+                [class.badge-done]="s.sessionStatus === 'Completed'">
+            {{ s.sessionStatus === 'InProgress' ? 'In Progress' : 'Completed' }}
+          </span>
+          <span *ngIf="sessionDeliveryState(s) === 'all-posted'" class="plsch-del-chip del-ok">
+            <mat-icon>check_circle</mat-icon>All Posted
+          </span>
+          <span *ngIf="sessionDeliveryState(s) === 'some-failed'" class="plsch-del-chip del-fail">
+            <mat-icon>cancel</mat-icon>Delivery Failed
+          </span>
+        </div>
+
+        <div class="plsch-stats">
+          <div class="plsch-stat">
+            <span class="plsch-stat-label">Total</span>
+            <span class="plsch-stat-val">{{ s.totalQty }}</span>
+          </div>
+          <div class="plsch-stat">
+            <span class="plsch-stat-label">Picked</span>
+            <span class="plsch-stat-val green">{{ s.pickedQty }}</span>
+          </div>
+          <div class="plsch-stat" *ngIf="s.remainingQty > 0">
+            <span class="plsch-stat-label">Rem.</span>
+            <span class="plsch-stat-val amber">{{ s.remainingQty }}</span>
+          </div>
+          <div class="plsch-stat">
+            <span class="plsch-stat-label">Parties</span>
+            <span class="plsch-stat-val">{{ s.completedParties }}/{{ s.totalParties }}</span>
+          </div>
+        </div>
+
+        <div class="plsch-right">
+          <span class="plsch-date">{{ s.startedAt | date:'dd MMM yyyy' }}<br>
+            <small>{{ s.startedAt | date:'HH:mm' }}</small>
+          </span>
+          <mat-icon class="plsch-chevron" [class.rotated]="s.expanded">expand_more</mat-icon>
+        </div>
+      </div>
+
+      <!-- Collapsed quick-action -->
+      <div *ngIf="!s.expanded && s.sessionStatus === 'InProgress'" class="pls-card-quick">
+        <button mat-stroked-button class="btn-continue" (click)="continuePicking(s, $event)">
+          <mat-icon>play_arrow</mat-icon>Continue Picking
+        </button>
+      </div>
+
+      <!-- Expanded party rows -->
+      <div *ngIf="s.expanded" class="pls-party-list">
+        <div class="ppl-divider"></div>
+
+        <div *ngFor="let p of s.parties" class="ppl-row">
+
+          <!-- Party info -->
+          <div class="ppl-info">
+            <div class="ppl-name">{{ p.cardName }}</div>
+            <div class="ppl-code">{{ p.cardCode }}</div>
+          </div>
+
+          <!-- Qty progress -->
+          <div class="ppl-qty">
+            <span class="ppl-qty-num">{{ p.pickedQty }}<span class="ppl-qty-sep">/</span>{{ p.totalQty }}</span>
+            <span class="ppl-pick-badge"
+                  [class.pbadge-done]="p.pickStatus === 'Completed'"
+                  [class.pbadge-ip]="p.pickStatus === 'InProgress'">
+              {{ p.pickStatus === 'Completed' ? 'Done' : 'Picking' }}
+            </span>
+          </div>
+
+          <!-- Delivery status -->
+          <div class="ppl-delivery">
+            <span class="ppl-del-badge"
+                  [class.del-success]="p.deliveryStatus === 'Success'"
+                  [class.del-failed]="p.deliveryStatus === 'Failed'"
+                  [class.del-pending]="p.deliveryStatus === 'Pending'"
+                  [class.del-none]="!p.deliveryStatus">
+              <mat-icon>{{ deliveryIcon(p.deliveryStatus) }}</mat-icon>
+              {{ deliveryLabel(p.deliveryStatus) }}
+            </span>
+            <span *ngIf="p.sapDocNum" class="ppl-doc-num">SAP #{{ p.sapDocNum }}</span>
+            <span *ngIf="p.deliveryError && p.deliveryStatus === 'Failed'"
+                  class="ppl-err-tip" [matTooltip]="p.deliveryError">
+              <mat-icon>info</mat-icon>
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="ppl-actions">
+            <button *ngIf="p.pickStatus === 'InProgress'"
+                    mat-stroked-button class="btn-continue"
+                    (click)="continuePicking(s, $event)">
+              <mat-icon>play_arrow</mat-icon>Continue
+            </button>
+
+            <button *ngIf="p.pickStatus === 'Completed' && p.deliveryStatus !== 'Success'"
+                    mat-stroked-button class="btn-post"
+                    [disabled]="isRetrying(s.sessionId, p.cardCode)"
+                    (click)="postDelivery(s, p, $event)">
+              <mat-spinner *ngIf="isRetrying(s.sessionId, p.cardCode)" diameter="14"></mat-spinner>
+              <mat-icon *ngIf="!isRetrying(s.sessionId, p.cardCode)">send</mat-icon>
+              {{ isRetrying(s.sessionId, p.cardCode) ? 'Posting…' : 'Post Delivery' }}
+            </button>
+
+            <span *ngIf="p.deliveryStatus === 'Success'" class="ppl-doc-info"
+                  [matTooltip]="'DocEntry: ' + p.sapDocEntry">
+              <mat-icon>receipt_long</mat-icon>Doc #{{ p.sapDocNum }}
+            </span>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>

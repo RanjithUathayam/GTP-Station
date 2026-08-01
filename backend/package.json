@@ -1,0 +1,38 @@
+{
+  "name": "gtp-station-api",
+  "version": "1.0.0",
+  "description": "GTP Station Put-to-Light Process API",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "pkg": {
+    "targets": [
+      "node18-win-x64"
+    ],
+    "assets": [
+      "node_modules/**/*",
+      "src/**/*"
+    ]
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "modbus-serial": "^8.0.25",
+    "morgan": "^1.10.0",
+    "mssql": "^10.0.2",
+    "pdfkit": "^0.19.1",
+    "socket.io": "^4.8.3",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}

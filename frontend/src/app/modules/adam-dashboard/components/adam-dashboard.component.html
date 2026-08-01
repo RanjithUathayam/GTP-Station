@@ -1,0 +1,167 @@
+<div class="adam-page">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────────── -->
+  <div class="page-header">
+    <div class="header-left">
+      <mat-icon class="page-icon">settings_input_component</mat-icon>
+      <div>
+        <h1 class="page-title">ADAM-6052 I/O Controller</h1>
+        <p class="page-sub">Advantech Ethernet Digital I/O Module — Modbus TCP</p>
+      </div>
+    </div>
+    <mat-form-field appearance="outline" class="device-select">
+      <mat-label>Device</mat-label>
+      <mat-select [ngModel]="selectedDevice" (ngModelChange)="onDeviceChange($event)">
+        <mat-option [value]="null">Legacy (env-configured)</mat-option>
+        <mat-option *ngFor="let code of deviceCodes" [value]="code">{{ code }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <button mat-stroked-button (click)="refresh()" class="refresh-btn">
+      <mat-icon>refresh</mat-icon> Refresh
+    </button>
+  </div>
+
+  <!-- ── Connection Status ──────────────────────────────────────────────────── -->
+  <mat-card class="conn-card" [class.connected]="status.connected">
+    <mat-card-content>
+      <div class="conn-row">
+        <div class="conn-indicator" [class.on]="status.connected"></div>
+        <div class="conn-info">
+          <span class="conn-label">{{ status.connected ? 'Connected' : 'Disconnected' }}</span>
+          <span class="conn-detail">{{ status.ip || connection.ip || 'N/A' }}:{{ status.port || connection.port || '502' }}</span>
+        </div>
+        <div class="conn-meta">
+          <span class="meta-badge">Modbus TCP</span>
+          <span class="meta-badge">Unit {{ status.unitId }}</span>
+          <span class="meta-badge retry" *ngIf="!status.connected && status.reconnectAttempts">
+            Retry #{{ status.reconnectAttempts }}
+          </span>
+          <span class="meta-badge err" *ngIf="status.error">{{ status.error }}</span>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- ── Digital Output Channels ────────────────────────────────────────────── -->
+  <div class="section-title">
+    <mat-icon>toggle_on</mat-icon>
+    <span>Digital Output (DO) — 8 Channels</span>
+    <span class="section-addr">FC01/FC05/FC15  addr 0x0010</span>
+  </div>
+
+  <div class="channel-grid">
+    <div
+      class="channel-card"
+      *ngFor="let card of doCards"
+      [class.active]="card.active"
+      [class.disabled]="!status.connected">
+
+      <div class="ch-header">
+        <span class="ch-number">DO {{ card.index }}</span>
+        <div class="ch-led" [class.on]="card.active"></div>
+      </div>
+
+      <div class="ch-state">{{ card.active ? 'ON' : 'OFF' }}</div>
+
+      <button
+        mat-raised-button
+        class="toggle-btn"
+        [class.btn-on]="!card.active"
+        [class.btn-off]="card.active"
+        [disabled]="!status.connected || card.loading"
+        (click)="toggleChannel(card)">
+        <mat-spinner *ngIf="card.loading" diameter="16" class="btn-spinner"></mat-spinner>
+        <span *ngIf="!card.loading">{{ card.active ? 'Turn OFF' : 'Turn ON' }}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Bulk DO Control ────────────────────────────────────────────────────── -->
+  <div class="section-title">
+    <mat-icon>tune</mat-icon>
+    <span>Bulk Output Control</span>
+    <span class="section-addr">FC15 write all coils</span>
+  </div>
+
+  <mat-card class="bulk-card">
+    <mat-card-content>
+      <div class="bulk-row">
+        <button mat-raised-button color="warn"
+          [disabled]="!status.connected || actionLoading"
+          (click)="setAllOff()">
+          <mat-icon>power_settings_new</mat-icon> All OFF
+        </button>
+
+        <button mat-raised-button color="primary"
+          [disabled]="!status.connected || actionLoading"
+          (click)="setAllOn()">
+          <mat-icon>flash_on</mat-icon> All ON
+        </button>
+
+        <mat-divider [vertical]="true" class="bulk-divider"></mat-divider>
+
+        <mat-form-field appearance="outline" class="hex-field">
+          <mat-label>Value (0–255)</mat-label>
+          <input matInput type="number" [(ngModel)]="allValue" min="0" max="255"
+            [disabled]="!status.connected" />
+          <mat-hint>bit0=DO0 … bit7=DO7</mat-hint>
+        </mat-form-field>
+
+        <button mat-raised-button
+          [disabled]="!status.connected || actionLoading"
+          (click)="writeAllValue()">
+          <mat-icon>send</mat-icon> Write
+        </button>
+      </div>
+
+      <!-- DO Bit visualizer from live poll -->
+      <div class="bitmap-row" *ngIf="status.do">
+        <span class="bitmap-label">DO live:</span>
+        <div class="bit-cells">
+          <div class="bit-cell" *ngFor="let bit of doBitOrder"
+            [class.bit-on]="status.do[bit]">
+            <span class="bit-idx">{{ bit }}</span>
+            <span class="bit-val">{{ status.do[bit] ? '1' : '0' }}</span>
+          </div>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- ── Digital Inputs ─────────────────────────────────────────────────────── -->
+  <div class="section-title">
+    <mat-icon>input</mat-icon>
+    <span>Digital Input (DI) — 12 Channels</span>
+    <span class="section-addr">FC02  addr 0x0000</span>
+  </div>
+
+  <mat-card class="di-card">
+    <mat-card-content>
+      <div class="di-grid">
+        <div
+          class="di-cell"
+          *ngFor="let i of diRows"
+          [class.di-on]="status.di && status.di[i]">
+          <div class="di-led" [class.on]="status.di && status.di[i]"></div>
+          <span class="di-label">DI {{ i }}</span>
+          <span class="di-state">{{ (status.di && status.di[i]) ? 'HIGH' : 'LOW' }}</span>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- ── Last response ──────────────────────────────────────────────────────── -->
+  <div class="section-title">
+    <mat-icon>terminal</mat-icon>
+    <span>Last Operation</span>
+    <span class="section-addr" *ngIf="status.ts">{{ status.ts }}</span>
+  </div>
+
+  <mat-card class="response-card">
+    <mat-card-content>
+      <code class="response-code">{{ lastResponse || '— waiting for Modbus data —' }}</code>
+    </mat-card-content>
+  </mat-card>
+
+</div>
