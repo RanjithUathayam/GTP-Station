@@ -2,6 +2,7 @@ const { getPool, sql } = require('../config/db');
 const ws     = require('./websocketService');
 const delivery = require('./deliveryService');
 const lights = require('./lightControlService');
+const boxSvc = require('./boxManagementService');
 const { BLOCKING_ERROR_CODES } = require('./adamDeviceManager');
 
 // ── Idempotent schema evolution for report support (StationId/TotalOrders) ───
@@ -81,7 +82,10 @@ async function loadPicklistData(headerId) {
                 T1.u_foldngtyp,
                 T1.u_packngtyp,
                 T1.u_falo,
-                T1.shiptocode
+                T1.shiptocode,
+				T3.U_SubGrp3 AS ITEMGROUP,
+				T3.U_SubGrp4,
+				T3.U_SubGrp7
             FROM   (SELECT DISTINCT headerid,
                                     docentry,
                                     productcode,
@@ -114,6 +118,7 @@ async function loadPicklistData(headerId) {
 async function startSession(headerId, operatorId, stationId = 'STN-01') {
     const pool = await getPool();
     await ensureSessionReportColumns(pool);
+    await boxSvc.ensureBoxTables(pool);
 
     // Deactivate any existing InProgress session for this picklist
     await pool.request()
@@ -139,21 +144,42 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
                 VALUES (@hid, @opid, @stn, @ords)`);
     const sessionId = sesRes.recordset[0].SessionID;
 
-    // Seed GTP_PickProgress — one row per CardCode + ProductCode
+    // Seed GTP_PickProgress — one row per CardCode + ProductCode; also aggregate
+    // per (CardCode, DocEntry, ItemGroupName) totals for the box-management
+    // plan below — box plans are per Sales Order, not per customer.
     const seen = new Set();
+    const groupTotals = new Map(); // composite key -> { cardCode, docEntry, itemGroupName, totalQty }
     for (const r of rows) {
         const key = `${r.CardCode}|${r.ProductCode}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        const itemGroupName = r.ItemGroupName || 'UNSPECIFIED';
         await pool.request()
             .input('sid',  sql.Int,           sessionId)
             .input('hid',  sql.NVarChar(50),  headerId)
             .input('cc',   sql.NVarChar(50),  r.CardCode)
             .input('ic',   sql.NVarChar(50),  r.ProductCode)
             .input('rqty', sql.Decimal(10,2), r.ReqQty)
+            .input('ig',   sql.NVarChar(100), itemGroupName)
+            .input('de',   sql.Int,           r.DocEntry)
             .query(`INSERT INTO GTP_PickProgress
-                        (SessionID, HeaderId, CardCode, ItemCode, RequiredQty)
-                    VALUES (@sid, @hid, @cc, @ic, @rqty)`);
+                        (SessionID, HeaderId, CardCode, ItemCode, RequiredQty, ItemGroupName, DocEntry)
+                    VALUES (@sid, @hid, @cc, @ic, @rqty, @ig, @de)`);
+
+        const gKey = `${r.CardCode}|${r.DocEntry}|${itemGroupName}`;
+        const existing = groupTotals.get(gKey);
+        if (existing) {
+            existing.totalQty += Number(r.ReqQty);
+        } else {
+            groupTotals.set(gKey, {
+                cardCode: r.CardCode, docEntry: r.DocEntry, itemGroupName, totalQty: Number(r.ReqQty),
+            });
+        }
+    }
+
+    // Build the box plan — one set of boxes per (CardCode, DocEntry, ItemGroupName)
+    for (const { cardCode, docEntry, itemGroupName, totalQty } of groupTotals.values()) {
+        await boxSvc.createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, itemGroupName, totalQty);
     }
 
     // Collect unique parties in seeding order for light-channel assignment
@@ -227,6 +253,16 @@ async function getSession(sessionId) {
         scanPartsMap[key].push({ uniqueNumber: s.UniqueNumber, qty: Number(s.ScannedQty) });
     }
 
+    // Box plans are per (CardCode, DocEntry, ItemGroupName) — key box groups the
+    // same way so each order gets only its own box groups (see `orders` below).
+    const boxGroupsList = await boxSvc.getBoxesForSession(sessionId);
+    const boxGroupsByPartyOrder = {};
+    for (const g of boxGroupsList) {
+        const key = `${g.cardCode}|${g.docEntry}`;
+        if (!boxGroupsByPartyOrder[key]) boxGroupsByPartyOrder[key] = [];
+        boxGroupsByPartyOrder[key].push(g);
+    }
+
     // Group by CardCode (party), DocEntries tracked for orderCount
     const partyMap = {};
     for (const r of rawRows) {
@@ -273,6 +309,31 @@ async function getSession(sessionId) {
         const totalPicked = [...uniquePicked.values()].reduce((s, v) => s + v, 0);
         const allDone     = items.every(i => i.status === 'Completed');
         const anyActive   = items.some(i  => i.status === 'InProgress');
+
+        // Split this party's items by DocEntry (order) — each row already carries
+        // its own DocEntry from the WMS join, one row per (DocEntry, ProductCode).
+        const orderMap = new Map();
+        for (const item of items) {
+            if (!orderMap.has(item.docEntry)) orderMap.set(item.docEntry, []);
+            orderMap.get(item.docEntry).push(item);
+        }
+        const orders = [...orderMap.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([docEntry, orderItems]) => {
+                const oReq       = orderItems.reduce((s, i) => s + i.requiredQty, 0);
+                const oPicked    = orderItems.reduce((s, i) => s + Math.min(i.pickedQty, i.requiredQty), 0);
+                const oAllDone   = orderItems.every(i => i.status === 'Completed');
+                const oAnyActive = orderItems.some(i => i.status === 'InProgress');
+                return {
+                    docEntry,
+                    totalRequiredQty: oReq,
+                    totalPickedQty:   oPicked,
+                    status:           oAllDone ? 'completed' : oAnyActive ? 'active' : 'pending',
+                    items:            orderItems,
+                    boxGroups:        boxGroupsByPartyOrder[`${p.cardCode}|${docEntry}`] || [],
+                };
+            });
+
         return {
             cardCode:         p.cardCode,
             cardName:         p.cardName,
@@ -284,6 +345,7 @@ async function getSession(sessionId) {
             totalPickedQty:   totalPicked,
             status:           allDone ? 'completed' : anyActive ? 'active' : 'pending',
             items,
+            orders,
         };
     });
 
@@ -370,7 +432,7 @@ async function processScan(sessionId, barcode, cardCode) {
                 WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic`);
 
     // Log scan
-    await pool.request()
+    const scanInsertRes = await pool.request()
         .input('sid',  sql.Int,           sessionId)
         .input('hid',  sql.NVarChar(50),  session.HeaderId)
         .input('cc',   sql.NVarChar(50),  cardCode)
@@ -383,7 +445,21 @@ async function processScan(sessionId, barcode, cardCode) {
         .query(`INSERT INTO GTP_ScanLog
                     (SessionID, HeaderId, CardCode, ItemCode, ScanType,
                      IDValue, ItemGroup, UniqueNumber, ScannedQty)
+                OUTPUT INSERTED.ScanID
                 VALUES (@sid, @hid, @cc, @ic, @st, @idv, @grp, @unum, @qty)`);
+    const scanId = scanInsertRes.recordset[0].ScanID;
+
+    // Route the picked qty into this item's Sales Order + item-group box plan
+    const { completedBoxes, firstBoxId } = await boxSvc.applyScanQtyToBoxes(
+        sessionId, cardCode, prog.DocEntry, prog.ItemGroupName, scanQty,
+    );
+    if (firstBoxId != null) {
+        await pool.request()
+            .input('bid',  sql.Int, firstBoxId)
+            .input('scid', sql.Int, scanId)
+            .query(`UPDATE GTP_ScanLog SET BoxID=@bid WHERE ScanID=@scid`);
+    }
+    completedBoxes.forEach(b => ws.broadcast('BOX_COMPLETED', { sessionId, ...b }));
 
     // Check party completion
     const partyProgRes = await pool.request()
@@ -409,14 +485,14 @@ async function processScan(sessionId, barcode, cardCode) {
         // All parties done — turn OFF all channels
         lights.resetStationLights(sessionId)
             .catch(err => console.error('[LIGHTS] resetStationLights error:', err.message));
-        delivery.triggerPartyDelivery(sessionId, cardCode)
+        delivery.triggerPartyDeliveries(sessionId, cardCode)
             .catch(err => console.error('SAP delivery trigger error:', err.message));
     } else if (partyDone) {
         ws.broadcast('PARTY_COMPLETED', { sessionId, cardCode });
         // This party is done — turn OFF its channel only
         lights.handlePartyComplete(sessionId, cardCode)
             .catch(err => console.error('[LIGHTS] handlePartyComplete error:', err.message));
-        delivery.triggerPartyDelivery(sessionId, cardCode)
+        delivery.triggerPartyDeliveries(sessionId, cardCode)
             .catch(err => console.error('SAP delivery trigger error:', err.message));
     } else {
         // Spotlight: turn ON only this party's channel, all others OFF
@@ -450,6 +526,7 @@ async function processScan(sessionId, barcode, cardCode) {
         partyCompleted:   partyDone,
         picklistCompleted:picklistDone,
         nextItemCode,
+        completedBoxes,
     };
 }
 

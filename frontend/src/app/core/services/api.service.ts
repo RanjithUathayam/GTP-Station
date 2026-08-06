@@ -6,6 +6,9 @@ import {
   Order, OrderItem, InventoryItem,
   Station, PTLSession, PagedResponse, ScanResult
 } from '../models';
+import {
+  BoxLabelData, ItemGroupBoxSummary, PickBox, BoxType, BoxTypeMatrixRow,
+} from '../models/picking.models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -97,14 +100,51 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/picking/session/${sessionId}/scan`, { barcode, cardCode });
   }
 
+  // ─── Box Types + capacity matrix (single source of truth for box capacity) ───
+  getBoxTypes(): Observable<{ success: boolean; data: BoxType[] }> {
+    return this.http.get<any>(`${this.base}/picking/box-types`);
+  }
+
+  upsertBoxType(label: string, sizeLWH?: string): Observable<{ success: boolean; data: BoxType[] }> {
+    return this.http.post<any>(`${this.base}/picking/box-types`, { label, sizeLWH });
+  }
+
+  deleteBoxType(boxTypeId: number): Observable<{ success: boolean; data: BoxType[] }> {
+    return this.http.delete<any>(`${this.base}/picking/box-types/${boxTypeId}`);
+  }
+
+  getBoxTypeMatrix(): Observable<{ success: boolean; data: BoxTypeMatrixRow[] }> {
+    return this.http.get<any>(`${this.base}/picking/box-types/matrix`);
+  }
+
+  upsertBoxTypeCapacity(boxTypeId: number, itemGroupName: string, capacity: number): Observable<{ success: boolean; data: BoxTypeMatrixRow[] }> {
+    return this.http.post<any>(`${this.base}/picking/box-types/${boxTypeId}/capacity`, { itemGroupName, capacity });
+  }
+
+  deleteBoxTypeCapacity(boxTypeId: number, itemGroupName: string): Observable<{ success: boolean; data: BoxTypeMatrixRow[] }> {
+    return this.http.delete<any>(`${this.base}/picking/box-types/${boxTypeId}/capacity/${encodeURIComponent(itemGroupName)}`);
+  }
+
+  completeBox(boxId: number, operatorId?: number): Observable<{ success: boolean; data: PickBox }> {
+    return this.http.post<any>(`${this.base}/picking/box/${boxId}/complete`, { operatorId });
+  }
+
+  getBoxLabel(boxId: number): Observable<{ success: boolean; data: BoxLabelData }> {
+    return this.http.get<any>(`${this.base}/picking/box/${boxId}/label`);
+  }
+
+  getSessionBoxes(sessionId: number): Observable<{ success: boolean; data: ItemGroupBoxSummary[] }> {
+    return this.http.get<any>(`${this.base}/picking/session/${sessionId}/boxes`);
+  }
+
   // ─── Delivery Status ────────────────────────────────────────
   getPicklistSessions(): Observable<{ success: boolean; data: any[] }> {
     return this.http.get<any>(`${this.base}/picking/sessions`);
   }
 
-  retryPartyDelivery(sessionId: number, cardCode: string): Observable<{ success: boolean; data: any }> {
+  retryDocumentDelivery(sessionId: number, cardCode: string, docEntry: number): Observable<{ success: boolean; data: any }> {
     return this.http.post<any>(
-      `${this.base}/picking/session/${sessionId}/deliveries/${encodeURIComponent(cardCode)}/retry`, {}
+      `${this.base}/picking/session/${sessionId}/deliveries/${encodeURIComponent(cardCode)}/${docEntry}/retry`, {}
     );
   }
 

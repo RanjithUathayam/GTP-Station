@@ -11,6 +11,7 @@ import { WebsocketService } from '../../../../core/services/websocket.service';
 import { AdamConfigService, AdamDeviceRuntimeStatus } from '../../../../core/services/adam-config.service';
 import {
   PicklistPreview, PicklistSession, PicklistParty, PicklistItem, ScanFeedback,
+  ItemGroupBoxSummary, PartyOrder,
 } from '../../../../core/models/picking.models';
 
 export type PickView = 'scan-picklist' | 'picking-board' | 'completed';
@@ -61,6 +62,9 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   scanInput   = '';
   scanLoading = false;
   scanFeedback: ScanFeedback = { state: 'ready', message: '' };
+
+  // ── Box progress (for the current item's item group) ───────
+  boxCompleting = false;
 
   // A hardware barcode scanner is a keyboard-wedge device — the browser can't tell its
   // keystrokes apart from a human's except by speed. Rather than gate every keystroke
@@ -345,6 +349,44 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     }
   }
 
+  // ── Box progress for the current item's order + item group ──
+  // Box plans are per (party, Sales Order, item group), so the lookup must
+  // match both the current order (docEntry) and the item group — the same
+  // item group can have an independent box plan on a different order.
+  get currentBoxGroup(): ItemGroupBoxSummary | null {
+    if (!this.currentParty || !this.currentItem) return null;
+    const order = this.currentParty.orders?.find(o => o.docEntry === this.currentItem!.docEntry);
+    return order?.boxGroups?.find(
+      g => g.itemGroupName === this.currentItem!.itemGroupName,
+    ) || null;
+  }
+
+  boxProgress(group: ItemGroupBoxSummary): number {
+    if (!group.currentBox || !group.currentBox.targetQty) return 0;
+    return Math.min(100, Math.round((group.currentBox.pickedQty / group.currentBox.targetQty) * 100));
+  }
+
+  completeCurrentBox(): void {
+    const box = this.currentBoxGroup?.currentBox;
+    if (!box || this.boxCompleting) return;
+    this.boxCompleting = true;
+    this.api.completeBox(box.boxId).subscribe({
+      next: () => {
+        this.boxCompleting = false;
+        this.openBoxLabel(box.boxId);
+        this.refreshSession();
+      },
+      error: (err) => {
+        this.boxCompleting = false;
+        this.notify.error(err.error?.message || 'Failed to complete box');
+      },
+    });
+  }
+
+  openBoxLabel(boxId: number): void {
+    window.open(`/picking/box-label/${boxId}`, '_blank');
+  }
+
   processItemScan(): void {
     const raw = this.scanInput.trim();
     if (!raw || this.scanLoading || !this.session) return;
@@ -389,6 +431,12 @@ export class PickingShellComponent implements OnInit, OnDestroy {
         this.scanLoading = false;
         this.scanInput   = '';
         const data = r.data;
+
+        // A box just filled up — print its label immediately, regardless of
+        // whether the item/party/picklist also completed on this same scan.
+        if (data.completedBoxes?.length) {
+          data.completedBoxes.forEach((b: any) => this.openBoxLabel(b.boxId));
+        }
 
         if (data.picklistCompleted) {
           this.setScanFeedback('done', `Picklist ${this.session!.headerId} completed!`);
@@ -461,6 +509,16 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     }
   }
 
+  orderPending(order: PartyOrder): number {
+    return Math.max(0, order.totalRequiredQty - order.totalPickedQty);
+  }
+
+  orderStatusLabel(order: PartyOrder): string {
+    if (order.status === 'completed') return 'Completed';
+    if (order.status === 'active') return 'In Progress';
+    return 'Pending';
+  }
+
   // ── Helpers ────────────────────────────────────────────────
   scanFeedbackIcon(): string {
     switch (this.scanFeedback.state) {
@@ -514,6 +572,19 @@ export class PickingShellComponent implements OnInit, OnDestroy {
 
   doneItemCount(party: PicklistParty): number {
     return party.items.filter(i => this.isItemDone(i)).length;
+  }
+
+  // Sub-splits a party's items by DocEntry (order) for the full-picklist strip —
+  // items already carry their DocEntry (one row per order line from the WMS join).
+  groupItemsByDocEntry(party: PicklistParty): { docEntry: number; items: PicklistItem[] }[] {
+    const map = new Map<number, PicklistItem[]>();
+    for (const item of party.items) {
+      if (!map.has(item.docEntry)) map.set(item.docEntry, []);
+      map.get(item.docEntry)!.push(item);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([docEntry, items]) => ({ docEntry, items }));
   }
 
   totalItemsCount(): number {

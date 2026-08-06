@@ -243,8 +243,42 @@ $muted:    rgba(255,255,255,.54);
   border-radius: 8px;
   background: $surface2;
   margin-bottom: 6px;
+}
 
-  &:last-child { margin-bottom: 0; }
+.ppl-boxes {
+  margin: 0 0 6px 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid $border;
+  font-size: 11px;
+}
+
+.ppb-head, .ppb-row {
+  display: grid;
+  grid-template-columns: 1.4fr .7fr .8fr .6fr 1.6fr;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.ppb-head {
+  color: $muted;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: .3px;
+  border-bottom: 1px solid $border;
+  padding-bottom: 5px;
+  margin-bottom: 2px;
+}
+
+.ppb-group { font-weight: 500; }
+.ppb-done-count { color: $muted; margin-left: 4px; }
+
+.ppl-boxes-loading {
+  font-size: 11px;
+  color: $muted;
+  margin: 0 0 6px 12px;
+  padding: 4px 0;
 }
 
 .ppl-info {
@@ -290,14 +324,39 @@ $muted:    rgba(255,255,255,.54);
   &.pbadge-ip   { background: rgba($amber,.15); color: $amber; }
 }
 
-.ppl-delivery {
+.ppl-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.ppl-del-badge {
+// ── Delivery documents — one row per SAP order (DocNumber) ─────────
+.ppl-documents {
+  margin: 0 0 6px 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid $border;
+}
+
+.ppd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba($border, .5);
+  &:last-child { border-bottom: none; }
+}
+
+.ppd-doc {
+  font-size: 11px;
+  font-weight: 600;
+  color: $txt;
+  font-family: monospace;
+}
+
+.ppd-del-badge {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -314,33 +373,19 @@ $muted:    rgba(255,255,255,.54);
   &.del-none    { background: rgba(255,255,255,.06); color: $muted; }
 }
 
-.ppl-doc-num {
+.ppd-doc-num {
   font-size: 11px;
   color: $blue;
   font-weight: 500;
 }
 
-.ppl-err-tip {
+.ppd-err-tip {
   color: $red;
   cursor: help;
   mat-icon { font-size: 15px; width: 15px; height: 15px; vertical-align: middle; }
 }
 
-.ppl-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.ppl-doc-info {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: $green;
-  mat-icon { font-size: 15px; width: 15px; height: 15px; }
-}
+.ppd-spacer { flex: 1; }
 
 // ── Action buttons ────────────────────────────────────────
 .btn-continue {

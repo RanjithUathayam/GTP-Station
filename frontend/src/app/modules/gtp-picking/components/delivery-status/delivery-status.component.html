@@ -108,7 +108,8 @@
       <div *ngIf="s.expanded" class="pls-party-list">
         <div class="ppl-divider"></div>
 
-        <div *ngFor="let p of s.parties" class="ppl-row">
+        <ng-container *ngFor="let p of s.parties">
+        <div class="ppl-row">
 
           <!-- Party info -->
           <div class="ppl-info">
@@ -126,23 +127,6 @@
             </span>
           </div>
 
-          <!-- Delivery status -->
-          <div class="ppl-delivery">
-            <span class="ppl-del-badge"
-                  [class.del-success]="p.deliveryStatus === 'Success'"
-                  [class.del-failed]="p.deliveryStatus === 'Failed'"
-                  [class.del-pending]="p.deliveryStatus === 'Pending'"
-                  [class.del-none]="!p.deliveryStatus">
-              <mat-icon>{{ deliveryIcon(p.deliveryStatus) }}</mat-icon>
-              {{ deliveryLabel(p.deliveryStatus) }}
-            </span>
-            <span *ngIf="p.sapDocNum" class="ppl-doc-num">SAP #{{ p.sapDocNum }}</span>
-            <span *ngIf="p.deliveryError && p.deliveryStatus === 'Failed'"
-                  class="ppl-err-tip" [matTooltip]="p.deliveryError">
-              <mat-icon>info</mat-icon>
-            </span>
-          </div>
-
           <!-- Actions -->
           <div class="ppl-actions">
             <button *ngIf="p.pickStatus === 'InProgress'"
@@ -150,23 +134,61 @@
                     (click)="continuePicking(s, $event)">
               <mat-icon>play_arrow</mat-icon>Continue
             </button>
-
-            <button *ngIf="p.pickStatus === 'Completed' && p.deliveryStatus !== 'Success'"
-                    mat-stroked-button class="btn-post"
-                    [disabled]="isRetrying(s.sessionId, p.cardCode)"
-                    (click)="postDelivery(s, p, $event)">
-              <mat-spinner *ngIf="isRetrying(s.sessionId, p.cardCode)" diameter="14"></mat-spinner>
-              <mat-icon *ngIf="!isRetrying(s.sessionId, p.cardCode)">send</mat-icon>
-              {{ isRetrying(s.sessionId, p.cardCode) ? 'Posting…' : 'Post Delivery' }}
-            </button>
-
-            <span *ngIf="p.deliveryStatus === 'Success'" class="ppl-doc-info"
-                  [matTooltip]="'DocEntry: ' + p.sapDocEntry">
-              <mat-icon>receipt_long</mat-icon>Doc #{{ p.sapDocNum }}
-            </span>
           </div>
 
         </div>
+
+        <!-- Delivery documents — one SAP Delivery Note per DocNumber (order) -->
+        <div class="ppl-documents" *ngIf="p.documents.length">
+          <div class="ppd-row" *ngFor="let doc of p.documents">
+            <span class="ppd-doc">Order #{{ doc.docEntry }}</span>
+            <span class="ppd-del-badge"
+                  [class.del-success]="doc.deliveryStatus === 'Success'"
+                  [class.del-failed]="doc.deliveryStatus === 'Failed'"
+                  [class.del-pending]="doc.deliveryStatus === 'Pending'"
+                  [class.del-none]="!doc.deliveryStatus">
+              <mat-icon>{{ deliveryIcon(doc.deliveryStatus) }}</mat-icon>
+              {{ deliveryLabel(doc.deliveryStatus) }}
+            </span>
+            <span *ngIf="doc.sapDocNum" class="ppd-doc-num">SAP #{{ doc.sapDocNum }}</span>
+            <span *ngIf="doc.deliveryError && doc.deliveryStatus === 'Failed'"
+                  class="ppd-err-tip" [matTooltip]="doc.deliveryError">
+              <mat-icon>info</mat-icon>
+            </span>
+            <span class="ppd-spacer"></span>
+            <button *ngIf="p.pickStatus === 'Completed' && doc.deliveryStatus !== 'Success'"
+                    mat-stroked-button class="btn-post"
+                    [disabled]="isRetrying(s.sessionId, p.cardCode, doc.docEntry)"
+                    (click)="postDelivery(s, p, doc, $event)">
+              <mat-spinner *ngIf="isRetrying(s.sessionId, p.cardCode, doc.docEntry)" diameter="14"></mat-spinner>
+              <mat-icon *ngIf="!isRetrying(s.sessionId, p.cardCode, doc.docEntry)">send</mat-icon>
+              {{ isRetrying(s.sessionId, p.cardCode, doc.docEntry) ? 'Posting…' : 'Post Delivery' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Box breakdown — Item Group | Qty | Capacity | Boxes | Status -->
+        <div class="ppl-boxes" *ngIf="boxGroupsFor(s, p.cardCode).length">
+          <div class="ppb-head">
+            <span class="ppb-group">Item Group</span>
+            <span class="ppb-qty">Qty</span>
+            <span class="ppb-cap">Capacity</span>
+            <span class="ppb-boxes">Boxes</span>
+            <span class="ppb-status">Status</span>
+          </div>
+          <div class="ppb-row" *ngFor="let g of boxGroupsFor(s, p.cardCode)">
+            <span class="ppb-group">{{ g.itemGroupName }}</span>
+            <span class="ppb-qty">{{ g.totalQty }}</span>
+            <span class="ppb-cap">{{ g.capacity }}</span>
+            <span class="ppb-boxes">{{ g.boxesRequired }}</span>
+            <span class="ppb-status">
+              Box {{ g.currentBoxNumber || g.boxesRequired }} of {{ g.boxesRequired }}
+              <span class="ppb-done-count">({{ g.completedBoxes }} done)</span>
+            </span>
+          </div>
+        </div>
+        <div class="ppl-boxes-loading" *ngIf="s.boxesLoading">Loading box breakdown…</div>
+        </ng-container>
       </div>
 
     </div>

@@ -161,6 +161,21 @@
             <div class="ppp-prog-track">
               <div class="ppp-prog-fill" [style.width.%]="partyProgress(party)"></div>
             </div>
+
+            <!-- Per-order (DocEntry) split — only shown when this customer has more than one order -->
+            <div class="ppp-orders" *ngIf="(party.orders?.length || 0) > 1">
+              <div class="ppo-row" *ngFor="let order of party.orders"
+                   [class.ppo-active]="order.status === 'active'"
+                   [class.ppo-done]="order.status === 'completed'">
+                <mat-icon class="ppo-icon">
+                  {{ order.status === 'completed' ? 'check_circle' : order.status === 'active' ? 'adjust' : 'radio_button_unchecked' }}
+                </mat-icon>
+                <span class="ppo-doc">#{{ order.docEntry }}</span>
+                <span class="ppo-qty" matTooltip="Picked / Required">{{ order.totalPickedQty }}/{{ order.totalRequiredQty }}</span>
+                <span class="ppo-pending" *ngIf="orderPending(order) > 0">{{ orderPending(order) }} pending</span>
+                <span class="ppo-status-label">{{ orderStatusLabel(order) }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -173,6 +188,7 @@
 
               <div class="ptc-picklist">
                 Picklist: <strong>{{ session?.headerId }}</strong>
+                <span class="ptc-order" *ngIf="currentItem">Order #{{ currentItem.docEntry }}</span>
                 <span class="ptc-seq">Item {{ currentItemIndex() }}/{{ currentParty?.items?.length }}</span>
               </div>
 
@@ -187,6 +203,32 @@
                 <div class="ptc-prog-track">
                   <div class="ptc-prog-fill" [style.width.%]="itemProgress(currentItem)"></div>
                 </div>
+              </div>
+
+              <!-- Box progress for this item's item group -->
+              <div class="ptc-box-progress" *ngIf="currentBoxGroup as boxGroup">
+                <div class="pbp-header">
+                  <span class="pbp-title">
+                    {{ boxGroup.itemGroupName }} — Box {{ boxGroup.currentBoxNumber || boxGroup.boxesRequired }} of {{ boxGroup.boxesRequired }}
+                  </span>
+                  <button mat-stroked-button class="pbp-complete-btn"
+                          [disabled]="boxCompleting || !boxGroup.currentBox"
+                          (click)="completeCurrentBox()">
+                    <mat-icon>inventory_2</mat-icon> Complete Box
+                  </button>
+                </div>
+                <div class="pbp-track">
+                  <div class="pbp-fill" [style.width.%]="boxProgress(boxGroup)"></div>
+                </div>
+                <div class="pbp-stats" *ngIf="boxGroup.currentBox as box; else allBoxesDone">
+                  <span>Box Qty: <strong>{{ box.pickedQty }}</strong> / {{ box.targetQty }}
+                    <span *ngIf="box.boxTypeLabel"> ({{ box.boxTypeLabel }} Box)</span>
+                  </span>
+                  <span>Boxes Done: <strong>{{ boxGroup.completedBoxes }}</strong> / {{ boxGroup.boxesRequired }}</span>
+                </div>
+                <ng-template #allBoxesDone>
+                  <div class="pbp-stats"><span>All {{ boxGroup.boxesRequired }} boxes completed</span></div>
+                </ng-template>
               </div>
 
               <!-- Partwise picked details — always visible -->
@@ -302,14 +344,20 @@
             <mat-icon>{{ party.status === 'completed' ? 'check_circle' : 'store' }}</mat-icon>
             {{ party.cardCode }}
           </div>
-          <div class="pis-item"
-               *ngFor="let item of party.items"
-               [class.pis-done]="isItemDone(item)"
-               [class.pis-active]="item.itemCode === currentItem?.itemCode && party.cardCode === currentParty?.cardCode">
-            <mat-icon>{{ isItemDone(item) ? 'check_circle' : (item.itemCode === currentItem?.itemCode && party.cardCode === currentParty?.cardCode) ? 'adjust' : 'radio_button_unchecked' }}</mat-icon>
-            <span class="pis-name" [matTooltip]="itemDisplayLabel(item)">{{ itemDisplayLabel(item) }}</span>
-            <span class="pis-qty">{{ item.pickedQty }}/{{ item.requiredQty }}</span>
-          </div>
+          <ng-container *ngFor="let order of groupItemsByDocEntry(party)">
+            <div class="pis-order-sep">
+              <mat-icon>receipt_long</mat-icon>
+              Order #{{ order.docEntry }}
+            </div>
+            <div class="pis-item"
+                 *ngFor="let item of order.items"
+                 [class.pis-done]="isItemDone(item)"
+                 [class.pis-active]="item.itemCode === currentItem?.itemCode && party.cardCode === currentParty?.cardCode">
+              <mat-icon>{{ isItemDone(item) ? 'check_circle' : (item.itemCode === currentItem?.itemCode && party.cardCode === currentParty?.cardCode) ? 'adjust' : 'radio_button_unchecked' }}</mat-icon>
+              <span class="pis-name" [matTooltip]="itemDisplayLabel(item)">{{ itemDisplayLabel(item) }}</span>
+              <span class="pis-qty">{{ item.pickedQty }}/{{ item.requiredQty }}</span>
+            </div>
+          </ng-container>
         </ng-container>
       </div>
 

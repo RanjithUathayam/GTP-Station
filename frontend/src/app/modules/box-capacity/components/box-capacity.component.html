@@ -1,0 +1,139 @@
+<div class="box-capacity-page">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────────── -->
+  <div class="page-header">
+    <div class="header-left">
+      <mat-icon class="page-icon">inbox</mat-icon>
+      <div>
+        <h1 class="page-title">Box Types &amp; Capacity Matrix</h1>
+        <p class="page-sub">This matrix is the single source of truth for box capacity — each Item Group maps to exactly one Box Type</p>
+      </div>
+    </div>
+    <button mat-raised-button color="primary" (click)="openAddBoxTypeForm()">
+      <mat-icon>add</mat-icon> Add Box Type
+    </button>
+  </div>
+
+  <mat-card class="form-card" *ngIf="boxTypeFormOpen">
+    <mat-card-content>
+      <div class="form-title">{{ editingBoxType ? 'Edit — ' + editingBoxType.Label : 'Add Box Type' }}</div>
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Label</mat-label>
+          <input matInput [(ngModel)]="boxTypeForm.label" placeholder="e.g. 5 Pcs" />
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="grow">
+          <mat-label>Size (L x W x H)</mat-label>
+          <input matInput [(ngModel)]="boxTypeForm.sizeLWH" placeholder="e.g. 14.5x10.5x7.5" />
+        </mat-form-field>
+      </div>
+      <div class="form-error" *ngIf="boxTypeFormError">{{ boxTypeFormError }}</div>
+      <div class="form-actions">
+        <button mat-button (click)="closeBoxTypeForm()">Cancel</button>
+        <button mat-raised-button color="primary" [disabled]="savingBoxType" (click)="saveBoxType()">
+          <mat-spinner *ngIf="savingBoxType" diameter="16" class="btn-spinner"></mat-spinner>
+          <span *ngIf="!savingBoxType">{{ editingBoxType ? 'Save Changes' : 'Create' }}</span>
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="table-card">
+    <mat-card-content>
+      <table mat-table [dataSource]="matrix" class="config-table">
+
+        <ng-container matColumnDef="label">
+          <th mat-header-cell *matHeaderCellDef>Box Type</th>
+          <td mat-cell *matCellDef="let bt">
+            <button class="row-select-btn" (click)="selectBoxType(bt)">
+              <mat-icon>{{ selectedBoxType?.BoxTypeID === bt.BoxTypeID ? 'expand_less' : 'expand_more' }}</mat-icon>
+              <span class="group-name">{{ bt.Label }}</span>
+              <span class="cell-count">{{ bt.capacities.length }} item group(s)</span>
+            </button>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="size">
+          <th mat-header-cell *matHeaderCellDef>Size (LxWxH)</th>
+          <td mat-cell *matCellDef="let bt">{{ bt.SizeLWH || '—' }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="active">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let bt">
+            <span class="status-chip" [class.active]="bt.IsActive">{{ bt.IsActive ? 'Active' : 'Inactive' }}</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let bt">
+            <button mat-icon-button matTooltip="Edit" (click)="openEditBoxTypeForm(bt)"><mat-icon>edit</mat-icon></button>
+            <button mat-icon-button matTooltip="Delete" (click)="deleteBoxType(bt)"><mat-icon>delete</mat-icon></button>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="boxTypeColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: boxTypeColumns;"></tr>
+      </table>
+
+      <div class="error-state" *ngIf="!matrixLoading && matrixError">
+        <mat-icon>error_outline</mat-icon>
+        <span>{{ matrixError }}</span>
+        <button mat-button color="primary" (click)="refreshMatrix()">Retry</button>
+      </div>
+      <div class="empty-state" *ngIf="!matrixLoading && !matrixError && matrix.length === 0">
+        No box types yet. Click "Add Box Type" to create one.
+      </div>
+      <div class="loading-state" *ngIf="matrixLoading">
+        <mat-spinner diameter="28"></mat-spinner>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Selected box type's per-item-group capacities -->
+  <mat-card class="table-card cells-card" *ngIf="selectedBoxType">
+    <mat-card-content>
+      <div class="cells-header">
+        <span class="cells-title">{{ selectedBoxType.Label }} — capacity per Item Group</span>
+        <button mat-stroked-button (click)="openAddCellForm()">
+          <mat-icon>add</mat-icon> Add
+        </button>
+      </div>
+
+      <mat-card class="form-card nested-form" *ngIf="cellFormOpen">
+        <mat-card-content>
+          <div class="form-row">
+            <mat-form-field appearance="outline" class="grow">
+              <mat-label>Item Group Name</mat-label>
+              <input matInput [(ngModel)]="cellForm.itemGroupName" placeholder="e.g. SHIRT" [disabled]="!!editingCell" />
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="narrow">
+              <mat-label>Capacity (pcs)</mat-label>
+              <input matInput type="number" min="1" [(ngModel)]="cellForm.capacity" />
+            </mat-form-field>
+          </div>
+          <div class="form-error" *ngIf="cellFormError">{{ cellFormError }}</div>
+          <div class="form-actions">
+            <button mat-button (click)="closeCellForm()">Cancel</button>
+            <button mat-raised-button color="primary" [disabled]="savingCell" (click)="saveCell()">
+              <mat-spinner *ngIf="savingCell" diameter="16" class="btn-spinner"></mat-spinner>
+              <span *ngIf="!savingCell">Save</span>
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <div class="cell-row" *ngFor="let cell of selectedBoxType.capacities">
+        <span class="cell-group">{{ cell.itemGroupName }}</span>
+        <span class="cell-cap">{{ cell.capacity }} pcs</span>
+        <button mat-icon-button matTooltip="Edit" (click)="openEditCellForm(cell)"><mat-icon>edit</mat-icon></button>
+        <button mat-icon-button matTooltip="Remove" (click)="deleteCell(cell.itemGroupName)"><mat-icon>delete</mat-icon></button>
+      </div>
+      <div class="empty-state" *ngIf="!selectedBoxType.capacities.length">
+        No item groups configured for this box type yet.
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+</div>

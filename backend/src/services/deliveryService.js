@@ -11,6 +11,7 @@ async function ensureTable() {
             SessionID      INT           NOT NULL,
             HeaderId       NVARCHAR(50)  NOT NULL,
             CardCode       NVARCHAR(50)  NOT NULL,
+            DocEntry       INT           NULL,
             Status         NVARCHAR(20)  NOT NULL DEFAULT 'Pending',
             SapDocEntry    INT           NULL,
             SapDocNum      INT           NULL,
@@ -20,6 +21,11 @@ async function ensureTable() {
             UpdatedAt      DATETIME      NULL
         )
     `);
+
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_DeliveryLog') AND name = 'DocEntry')
+            ALTER TABLE GTP_DeliveryLog ADD DocEntry INT NULL;
+    `);
 }
 
 // ── Format today as YYYY-MM-DD ────────────────────────────────
@@ -27,13 +33,39 @@ function today() {
     return new Date().toISOString().slice(0, 10);
 }
 
-// ── Build the SAP delivery payload for one party ─────────────
-async function buildDeliveryPayload(sessionId, cardCode) {
+// ── The party's distinct real SAP orders (DocEntries) for this picklist ──
+async function getPartyDocEntries(sessionId, cardCode) {
+    const pool = await getPool();
+
+    const sesRes = await pool.request()
+        .input('sid', sql.Int, sessionId)
+        .query('SELECT HeaderId FROM GTP_PicklistSessions WHERE SessionID = @sid');
+    const headerId = sesRes.recordset[0]?.HeaderId;
+    if (!headerId) throw new Error(`Session ${sessionId} not found`);
+
+    const res = await pool.request()
+        .input('hid', sql.NVarChar(50), headerId)
+        .input('cc',  sql.NVarChar(50), cardCode)
+        .query(`
+            SELECT DISTINCT TD.DocEntry
+            FROM   WMS.dbo.Tran_TransDetails TD
+            INNER  JOIN BBLive.dbo.ORDR O
+                    ON O.DocEntry = TD.DocEntry
+                   AND O.CardCode COLLATE DATABASE_DEFAULT = @cc
+            WHERE  TD.HeaderId = @hid
+            ORDER  BY TD.DocEntry
+        `);
+    return { headerId, docEntries: res.recordset.map(r => r.DocEntry) };
+}
+
+// ── Build the SAP delivery payload for one party + one specific order ────
+async function buildDeliveryPayload(sessionId, cardCode, docEntry) {
     const pool = await getPool();
 
     const result = await pool.request()
         .input('sid', sql.Int,          sessionId)
         .input('cc',  sql.NVarChar(50), cardCode)
+        .input('de',  sql.Int,          docEntry)
         .query(`
             SELECT DISTINCT
                 PP.ItemCode,
@@ -76,23 +108,20 @@ async function buildDeliveryPayload(sessionId, cardCode) {
                     ORDER  BY LineNum
                 ), '01')                AS WarehouseCode
             FROM GTP_PickProgress PP
-            CROSS APPLY (
-                SELECT TOP 1 TD2.DocEntry
-                FROM   WMS.dbo.Tran_TransDetails TD2
-                INNER  JOIN BBLive.dbo.ORDR O2
-                       ON O2.DocEntry = TD2.DocEntry
-                      AND O2.CardCode COLLATE DATABASE_DEFAULT = PP.CardCode
-                WHERE  TD2.HeaderId    = PP.HeaderId
-                  AND  TD2.ProductCode COLLATE DATABASE_DEFAULT = PP.ItemCode
-                ORDER  BY TD2.DocEntry
-            ) TD
+            INNER JOIN WMS.dbo.Tran_TransDetails TD
+                    ON TD.HeaderId    = PP.HeaderId
+                   AND TD.ProductCode COLLATE DATABASE_DEFAULT = PP.ItemCode
+                   AND TD.DocEntry    = @de
+            INNER JOIN BBLive.dbo.ORDR O
+                    ON O.DocEntry = TD.DocEntry
+                   AND O.CardCode COLLATE DATABASE_DEFAULT = PP.CardCode
             WHERE PP.SessionID = @sid
               AND PP.CardCode  = @cc
               AND PP.Status    = 'Completed'
         `);
 
     if (!result.recordset.length) {
-        throw new Error(`No completed items found for party ${cardCode} in session ${sessionId}`);
+        throw new Error(`No completed items found for party ${cardCode} / order ${docEntry} in session ${sessionId}`);
     }
 
     const docDate  = today();
@@ -115,39 +144,41 @@ async function buildDeliveryPayload(sessionId, cardCode) {
         DocDate:    docDate,
         DocDueDate: docDate,
         TaxDate:    docDate,
-        Comments:   `GTP Station Pick List: ${headerId}`,
+        Comments:   `GTP Station Pick List: ${headerId} | Order: ${docEntry}`,
         DocumentLines: documentLines,
     };
 }
 
-// ── Trigger SAP delivery for a completed party ────────────────
-async function triggerPartyDelivery(sessionId, cardCode) {
+// ── Trigger SAP delivery for one party + one specific order ──────────────
+async function triggerDocumentDelivery(sessionId, cardCode, docEntry, headerIdHint) {
     await ensureTable();
     const pool = await getPool();
     let logId = null;
 
     try {
-        // Resolve headerId
-        const sesRes = await pool.request()
-            .input('sid', sql.Int, sessionId)
-            .query('SELECT HeaderId FROM GTP_PicklistSessions WHERE SessionID = @sid');
-        const headerId = sesRes.recordset[0]?.HeaderId;
-        if (!headerId) throw new Error(`Session ${sessionId} not found`);
+        let headerId = headerIdHint;
+        if (!headerId) {
+            const sesRes = await pool.request()
+                .input('sid', sql.Int, sessionId)
+                .query('SELECT HeaderId FROM GTP_PicklistSessions WHERE SessionID = @sid');
+            headerId = sesRes.recordset[0]?.HeaderId;
+            if (!headerId) throw new Error(`Session ${sessionId} not found`);
+        }
 
-        // Build SAP payload
-        const payload = await buildDeliveryPayload(sessionId, cardCode);
+        const payload = await buildDeliveryPayload(sessionId, cardCode, docEntry);
 
         // Insert Pending log
         const logRes = await pool.request()
             .input('sid', sql.Int,           sessionId)
             .input('hid', sql.NVarChar(50),  headerId)
             .input('cc',  sql.NVarChar(50),  cardCode)
+            .input('de',  sql.Int,           docEntry)
             .input('pl',  sql.NVarChar(sql.MAX), JSON.stringify(payload))
             .query(`
                 INSERT INTO GTP_DeliveryLog
-                    (SessionID, HeaderId, CardCode, Status, RequestPayload)
+                    (SessionID, HeaderId, CardCode, DocEntry, Status, RequestPayload)
                 OUTPUT INSERTED.LogID
-                VALUES (@sid, @hid, @cc, 'Pending', @pl)
+                VALUES (@sid, @hid, @cc, @de, 'Pending', @pl)
             `);
         logId = logRes.recordset[0].LogID;
 
@@ -165,11 +196,11 @@ async function triggerPartyDelivery(sessionId, cardCode) {
                 WHERE LogID = @lid
             `);
 
-        console.log(`✅ SAP Delivery created — DocEntry: ${sapResult.DocEntry}, DocNum: ${sapResult.DocNum}, Party: ${cardCode}`);
-        return { success: true, docEntry: sapResult.DocEntry, docNum: sapResult.DocNum };
+        console.log(`✅ SAP Delivery created — Order: ${docEntry}, SAP DocEntry: ${sapResult.DocEntry}, SAP DocNum: ${sapResult.DocNum}, Party: ${cardCode}`);
+        return { success: true, orderDocEntry: docEntry, sapDocEntry: sapResult.DocEntry, sapDocNum: sapResult.DocNum };
 
     } catch (err) {
-        console.error(`❌ SAP Delivery failed — Party: ${cardCode} |`, err.message);
+        console.error(`❌ SAP Delivery failed — Party: ${cardCode}, Order: ${docEntry} |`, err.message);
 
         if (logId) {
             try {
@@ -186,8 +217,26 @@ async function triggerPartyDelivery(sessionId, cardCode) {
             }
         }
 
-        return { success: false, error: err.message };
+        return { success: false, orderDocEntry: docEntry, error: err.message };
     }
+}
+
+// ── Trigger SAP delivery for a completed party — one document per order ──
+// (DocEntry), even though they all belong to the same customer.
+async function triggerPartyDeliveries(sessionId, cardCode) {
+    const { headerId, docEntries } = await getPartyDocEntries(sessionId, cardCode);
+    if (!docEntries.length) {
+        console.error(`❌ SAP Delivery skipped — no orders found for party ${cardCode} in session ${sessionId}`);
+        return [];
+    }
+
+    // Sequential, not parallel — posts against the same SAP session/customer
+    // one at a time, which is the safer choice for a live financial system.
+    const results = [];
+    for (const docEntry of docEntries) {
+        results.push(await triggerDocumentDelivery(sessionId, cardCode, docEntry, headerId));
+    }
+    return results;
 }
 
 // ── Get all delivery log records for a session ────────────────
@@ -197,7 +246,7 @@ async function getSessionDeliveries(sessionId) {
     const res = await pool.request()
         .input('sid', sql.Int, sessionId)
         .query(`
-            SELECT LogID, CardCode, Status, SapDocEntry, SapDocNum,
+            SELECT LogID, CardCode, DocEntry, Status, SapDocEntry, SapDocNum,
                    ErrorMessage, CreatedAt, UpdatedAt
             FROM   GTP_DeliveryLog
             WHERE  SessionID = @sid
@@ -206,4 +255,7 @@ async function getSessionDeliveries(sessionId) {
     return res.recordset;
 }
 
-module.exports = { triggerPartyDelivery, getSessionDeliveries, buildDeliveryPayload };
+module.exports = {
+    triggerPartyDeliveries, triggerDocumentDelivery,
+    getSessionDeliveries, buildDeliveryPayload,
+};

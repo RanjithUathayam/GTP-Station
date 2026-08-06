@@ -16,6 +16,10 @@ const routes: Routes = [
     loadChildren: () => import('./modules/adam-config/adam-config.module').then(m => m.AdamConfigModule),
   },
   {
+    path: 'box-capacity',
+    loadChildren: () => import('./modules/box-capacity/box-capacity.module').then(m => m.BoxCapacityModule),
+  },
+  {
     path: 'reports',
     loadChildren: () => import('./modules/reports/reports.module').then(m => m.ReportsModule),
   },

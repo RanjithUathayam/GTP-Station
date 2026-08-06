@@ -3,6 +3,16 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiService } from '../../../../core/services/api.service';
+import { ItemGroupBoxSummary } from '../../../../core/models/picking.models';
+
+interface DeliveryDocStatus {
+  docEntry: number;
+  deliveryStatus: 'Pending' | 'Success' | 'Failed' | null;
+  sapDocEntry: number | null;
+  sapDocNum: number | null;
+  deliveryError: string | null;
+  deliveryUpdatedAt: string | null;
+}
 
 interface PartyStatus {
   cardCode: string;
@@ -11,11 +21,7 @@ interface PartyStatus {
   pickedQty: number;
   remainingQty: number;
   pickStatus: 'InProgress' | 'Completed';
-  deliveryStatus: 'Pending' | 'Success' | 'Failed' | null;
-  sapDocEntry: number | null;
-  sapDocNum: number | null;
-  deliveryError: string | null;
-  deliveryUpdatedAt: string | null;
+  documents: DeliveryDocStatus[];
 }
 
 interface DeliverySession {
@@ -31,6 +37,8 @@ interface DeliverySession {
   completedParties: number;
   parties: PartyStatus[];
   expanded: boolean;
+  boxGroupsByParty?: Record<string, ItemGroupBoxSummary[]>;
+  boxesLoading?: boolean;
 }
 
 @Component({
@@ -88,7 +96,34 @@ export class DeliveryStatusComponent implements OnInit {
 
   toggle(session: DeliverySession): void {
     session.expanded = !session.expanded;
+    if (session.expanded && !session.boxGroupsByParty && !session.boxesLoading) {
+      this.loadBoxes(session);
+    }
     this.cdr.markForCheck();
+  }
+
+  private loadBoxes(session: DeliverySession): void {
+    session.boxesLoading = true;
+    this.api.getSessionBoxes(session.sessionId).subscribe({
+      next: (r) => {
+        const map: Record<string, ItemGroupBoxSummary[]> = {};
+        for (const g of r.data) {
+          if (!map[g.cardCode]) map[g.cardCode] = [];
+          map[g.cardCode].push(g);
+        }
+        session.boxGroupsByParty = map;
+        session.boxesLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        session.boxesLoading = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  boxGroupsFor(session: DeliverySession, cardCode: string): ItemGroupBoxSummary[] {
+    return session.boxGroupsByParty?.[cardCode] || [];
   }
 
   continuePicking(session: DeliverySession, event?: Event): void {
@@ -98,20 +133,20 @@ export class DeliveryStatusComponent implements OnInit {
     });
   }
 
-  postDelivery(session: DeliverySession, party: PartyStatus, event: Event): void {
+  postDelivery(session: DeliverySession, party: PartyStatus, doc: DeliveryDocStatus, event: Event): void {
     event.stopPropagation();
-    const key = `${session.sessionId}_${party.cardCode}`;
+    const key = `${session.sessionId}_${party.cardCode}_${doc.docEntry}`;
     if (this.retryingMap.get(key)) return;
     this.retryingMap.set(key, true);
     this.cdr.markForCheck();
-    this.api.retryPartyDelivery(session.sessionId, party.cardCode).subscribe({
+    this.api.retryDocumentDelivery(session.sessionId, party.cardCode, doc.docEntry).subscribe({
       next: () => { this.retryingMap.delete(key); this.load(); },
       error: () => { this.retryingMap.delete(key); this.cdr.markForCheck(); },
     });
   }
 
-  isRetrying(sessionId: number, cardCode: string): boolean {
-    return !!this.retryingMap.get(`${sessionId}_${cardCode}`);
+  isRetrying(sessionId: number, cardCode: string, docEntry: number): boolean {
+    return !!this.retryingMap.get(`${sessionId}_${cardCode}_${docEntry}`);
   }
 
   deliveryIcon(status: string | null): string {
@@ -132,13 +167,17 @@ export class DeliveryStatusComponent implements OnInit {
     return this.sessions.filter(s => s.sessionStatus === status).length;
   }
 
+  private allDocs(session: DeliverySession): DeliveryDocStatus[] {
+    return session.parties.flatMap(p => p.documents);
+  }
+
   sessionDeliveryState(session: DeliverySession): 'all-posted' | 'some-failed' | 'none' | 'partial' {
-    const parties = session.parties;
-    const posted  = parties.filter(p => p.deliveryStatus === 'Success').length;
-    const failed  = parties.filter(p => p.deliveryStatus === 'Failed').length;
-    if (posted === parties.length)  return 'all-posted';
-    if (failed > 0)                 return 'some-failed';
-    if (posted > 0)                 return 'partial';
+    const docs   = this.allDocs(session);
+    const posted = docs.filter(d => d.deliveryStatus === 'Success').length;
+    const failed = docs.filter(d => d.deliveryStatus === 'Failed').length;
+    if (docs.length > 0 && posted === docs.length) return 'all-posted';
+    if (failed > 0)                                return 'some-failed';
+    if (posted > 0)                                return 'partial';
     return 'none';
   }
 }

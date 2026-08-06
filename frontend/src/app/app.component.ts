@@ -26,6 +26,7 @@ export class AppComponent implements OnInit, OnDestroy {
     { path: '/picking/delivery-status', label: 'Delivery Status', icon: 'list_alt'                 },
     { path: '/adam',                   label: 'ADAM-6052',       icon: 'settings_input_component' },
     { path: '/adam-config',            label: 'ADAM Config',     icon: 'tune'                      },
+    { path: '/box-capacity',           label: 'Box Capacity',    icon: 'inbox'                     },
     { path: '/reports',                label: 'Picking Report',  icon: 'assessment'                },
   ];
 

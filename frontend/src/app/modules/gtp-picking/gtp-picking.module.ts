@@ -14,9 +14,10 @@ import { MatRippleModule } from '@angular/material/core';
 import { GtpPickingRoutingModule } from './gtp-picking-routing.module';
 import { PickingShellComponent } from './components/picking-shell/picking-shell.component';
 import { DeliveryStatusComponent } from './components/delivery-status/delivery-status.component';
+import { BoxLabelComponent } from './components/box-label/box-label.component';
 
 @NgModule({
-  declarations: [PickingShellComponent, DeliveryStatusComponent],
+  declarations: [PickingShellComponent, DeliveryStatusComponent, BoxLabelComponent],
   imports: [
     CommonModule,
     FormsModule,
