@@ -24,6 +24,7 @@ export class AppComponent implements OnInit, OnDestroy {
   navItems: NavItem[] = [
     { path: '/picking',                label: 'GTP Picking',     icon: 'inventory'                },
     { path: '/picking/delivery-status', label: 'Delivery Status', icon: 'list_alt'                 },
+    { path: '/picking/box-lookup',      label: 'Box Lookup',      icon: 'qr_code_scanner'          },
     { path: '/adam',                   label: 'ADAM-6052',       icon: 'settings_input_component' },
     { path: '/adam-config',            label: 'ADAM Config',     icon: 'tune'                      },
     { path: '/box-capacity',           label: 'Box Capacity',    icon: 'inbox'                     },

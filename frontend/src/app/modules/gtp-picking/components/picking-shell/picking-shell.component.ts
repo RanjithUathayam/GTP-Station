@@ -203,6 +203,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
       next: (r) => {
         this.picklistLoading = false;
         this.session         = r.data;
+        this.printAllFirstBoxLabels(this.session);
         this.goToBoard();
       },
       error: (err) => {
@@ -371,9 +372,11 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     if (!box || this.boxCompleting) return;
     this.boxCompleting = true;
     this.api.completeBox(box.boxId).subscribe({
-      next: () => {
+      next: (r) => {
         this.boxCompleting = false;
-        this.openBoxLabel(box.boxId);
+        // Print the NEXT box's ID label (before it's filled) — not the one
+        // that just completed; nothing prints if that was the group's last box.
+        if (r.data.nextActivatedBox) this.openBoxIdLabel(r.data.nextActivatedBox.boxId);
         this.refreshSession();
       },
       error: (err) => {
@@ -383,8 +386,23 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     });
   }
 
-  openBoxLabel(boxId: number): void {
-    window.open(`/picking/box-label/${boxId}`, '_blank');
+  openBoxIdLabel(boxId: number): void {
+    window.open(`/picking/box-id-label/${boxId}`, '_blank');
+  }
+
+  // Batch-prints every box group's first ID label at once, right after a NEW
+  // session is created (not on resume — those labels already printed once).
+  private printAllFirstBoxLabels(session: PicklistSession | null): void {
+    if (!session) return;
+    for (const party of session.parties) {
+      for (const order of party.orders || []) {
+        for (const group of order.boxGroups || []) {
+          if (group.currentBox && group.currentBox.boxNumber === 1) {
+            this.openBoxIdLabel(group.currentBox.boxId);
+          }
+        }
+      }
+    }
   }
 
   processItemScan(): void {
@@ -432,11 +450,9 @@ export class PickingShellComponent implements OnInit, OnDestroy {
         this.scanInput   = '';
         const data = r.data;
 
-        // A box just filled up — print its label immediately, regardless of
-        // whether the item/party/picklist also completed on this same scan.
-        if (data.completedBoxes?.length) {
-          data.completedBoxes.forEach((b: any) => this.openBoxLabel(b.boxId));
-        }
+        // A box just filled up — print the NEXT box's ID label before the
+        // picker starts filling it (nothing prints if that was the last box).
+        if (data.nextActivatedBox) this.openBoxIdLabel(data.nextActivatedBox.boxId);
 
         if (data.picklistCompleted) {
           this.setScanFeedback('done', `Picklist ${this.session!.headerId} completed!`);

@@ -97,6 +97,14 @@ async function ensureBoxTables(pool) {
                 UNIQUE (SessionID, CardCode, DocEntry, ItemGroupName, BoxNumber);
     `);
 
+    // Global, sequential, human-readable Box Number (BX000001, BX000002, ...) —
+    // unique across every picklist ever run, not just the current session.
+    // Stored directly in BoxCode (already the label/QR identifier column).
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE name = 'GTP_BoxNumberSeq')
+            CREATE SEQUENCE GTP_BoxNumberSeq AS INT START WITH 1 INCREMENT BY 1;
+    `);
+
     // ── Box Types + capacity matrix (a physical box holds a different qty per
     // Item Group). This matrix is the single source of truth for box capacity.
     // An Item Group is expected to have MULTIPLE Box Types configured — box
@@ -333,13 +341,13 @@ async function createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, 
         plan = [{ boxTypeId: null, label: null, targetQty: totalQty }];
     }
 
-    const groupSlug = groupName.replace(/\s+/g, '').toUpperCase();
-
     for (let i = 0; i < plan.length; i++) {
         const n = i + 1;
         const { targetQty, boxTypeId } = plan[i];
-        const boxCode = `${headerId}-${cardCode}-${docEntry}-${groupSlug}-B${n}`;
-        const status  = n === 1 ? 'Active' : 'Pending';
+        const status = n === 1 ? 'Active' : 'Pending';
+
+        const seqRes = await pool.request().query(`SELECT NEXT VALUE FOR GTP_BoxNumberSeq AS Seq`);
+        const boxCode = 'BX' + String(seqRes.recordset[0].Seq).padStart(6, '0');
 
         await pool.request()
             .input('sid', sql.Int,           sessionId)
@@ -420,7 +428,25 @@ async function applyScanQtyToBoxes(sessionId, cardCode, docEntry, itemGroupName,
         remaining -= portion;
     }
 
-    return { completedBoxes, firstBoxId };
+    // The box now Active for this group, if a completion moved the plan
+    // forward this call — the frontend prints its ID label before the
+    // picker starts filling it. Stays null if the group's last box just
+    // completed (nothing left to print for).
+    let nextActivatedBox = null;
+    if (completedBoxes.length) {
+        const activeRes = await pool.request()
+            .input('sid', sql.Int,           sessionId)
+            .input('cc',  sql.NVarChar(50),  cardCode)
+            .input('de',  sql.Int,           docEntry)
+            .input('ig',  sql.NVarChar(100), itemGroupName)
+            .query(`SELECT TOP 1 BoxID, BoxNumber FROM GTP_PickBoxes
+                    WHERE SessionID=@sid AND CardCode=@cc AND DocEntry=@de AND ItemGroupName=@ig AND Status='Active'`);
+        if (activeRes.recordset[0]) {
+            nextActivatedBox = { boxId: activeRes.recordset[0].BoxID, boxNumber: activeRes.recordset[0].BoxNumber };
+        }
+    }
+
+    return { completedBoxes, firstBoxId, nextActivatedBox };
 }
 
 // ── Manual box completion ────────────────────────────────────────
@@ -452,9 +478,21 @@ async function completeBoxManually(boxId, operatorId) {
         .query(`UPDATE GTP_PickBoxes SET Status='Active'
                 WHERE SessionID=@sid AND CardCode=@cc AND DocEntry=@de AND ItemGroupName=@ig AND BoxNumber=@bn AND Status='Pending'`);
 
+    const nextRes = await pool.request()
+        .input('sid', sql.Int,           box.SessionID)
+        .input('cc',  sql.NVarChar(50),  box.CardCode)
+        .input('de',  sql.Int,           box.DocEntry)
+        .input('ig',  sql.NVarChar(100), box.ItemGroupName)
+        .input('bn',  sql.Int,           box.BoxNumber + 1)
+        .query(`SELECT BoxID, BoxNumber FROM GTP_PickBoxes
+                WHERE SessionID=@sid AND CardCode=@cc AND DocEntry=@de AND ItemGroupName=@ig AND BoxNumber=@bn AND Status='Active'`);
+    const nextActivatedBox = nextRes.recordset[0]
+        ? { boxId: nextRes.recordset[0].BoxID, boxNumber: nextRes.recordset[0].BoxNumber }
+        : null;
+
     const updated = await pool.request().input('bid', sql.Int, boxId)
         .query(`SELECT * FROM GTP_PickBoxes WHERE BoxID=@bid`);
-    return updated.recordset[0];
+    return { ...updated.recordset[0], nextActivatedBox };
 }
 
 // ── Box summary for a session (embedded in getSession() + dashboard) ──────
@@ -519,6 +557,7 @@ async function getItemMeta(pool, itemCode) {
     const res = await pool.request()
         .input('ic', sql.NVarChar(50), itemCode)
         .query(`SELECT TOP 1 T3.itemcode AS ItemCode,
+                    T3.itemname                AS ProductName,
                     Ltrim(Rtrim(T3.u_subgrp5)) AS ItemSize,
                     T3.u_style                 AS StyleNo,
                     Ltrim(Rtrim(T3.u_subgrp6)) AS ItemColor
@@ -527,7 +566,20 @@ async function getItemMeta(pool, itemCode) {
     return res.recordset[0] || {};
 }
 
-async function getBoxLabelData(boxId) {
+async function getCardName(pool, headerId, cardCode) {
+    const nameRes = await pool.request()
+        .input('hid', sql.NVarChar(50), headerId)
+        .input('cc',  sql.NVarChar(50), cardCode)
+        .query(`SELECT TOP 1 O2.CardName
+                FROM WMS.dbo.Tran_TransDetails TD2
+                INNER JOIN BBLive.dbo.ORDR O2
+                       ON O2.DocEntry = TD2.DocEntry AND O2.CardCode COLLATE DATABASE_DEFAULT = @cc
+                WHERE TD2.HeaderId = @hid`);
+    return nameRes.recordset[0]?.CardName || cardCode;
+}
+
+// ── Box Identification Label — printed for an empty box, before packing ──
+async function getBoxIdentificationLabelData(boxId) {
     const pool = await getPool();
     await ensureBoxTables(pool);
 
@@ -541,15 +593,7 @@ async function getBoxLabelData(boxId) {
     const box = boxRes.recordset[0];
     if (!box) throw Object.assign(new Error('Box not found'), { status: 404 });
 
-    const nameRes = await pool.request()
-        .input('hid', sql.NVarChar(50), box.HeaderId)
-        .input('cc',  sql.NVarChar(50), box.CardCode)
-        .query(`SELECT TOP 1 O2.CardName
-                FROM WMS.dbo.Tran_TransDetails TD2
-                INNER JOIN BBLive.dbo.ORDR O2
-                       ON O2.DocEntry = TD2.DocEntry AND O2.CardCode COLLATE DATABASE_DEFAULT = @cc
-                WHERE TD2.HeaderId = @hid`);
-    const cardName = nameRes.recordset[0]?.CardName || box.CardCode;
+    const cardName = await getCardName(pool, box.HeaderId, box.CardCode);
 
     const totalRes = await pool.request()
         .input('sid', sql.Int,           box.SessionID)
@@ -559,45 +603,77 @@ async function getBoxLabelData(boxId) {
         .query(`SELECT COUNT(*) AS Total FROM GTP_PickBoxes WHERE SessionID=@sid AND CardCode=@cc AND DocEntry=@de AND ItemGroupName=@ig`);
     const totalBoxes = totalRes.recordset[0].Total;
 
-    const lineRes = await pool.request().input('bid', sql.Int, boxId)
-        .query(`SELECT ItemCode, SUM(ScannedQty) AS Qty, MAX(IDValue) AS Barcode
+    return {
+        companyName:      COMPANY_NAME,
+        customerName:     cardName,
+        picklistNumber:   box.HeaderId,
+        salesOrderNumber: box.DocEntry,
+        itemGroupName:    box.ItemGroupName,
+        boxNumber:        box.BoxCode,
+        boxTypeLabel:     box.BoxTypeLabel || null,
+        boxSequence:      box.BoxNumber,
+        totalBoxes,
+        createdAt:        box.CreatedAt,
+    };
+}
+
+// ── Box Contents Label — printed on-demand after a QR scan, once the box is
+// packed. Looked up by the human Box Number (BoxCode), not the internal id.
+async function getBoxContentsLabelData(boxCode) {
+    const pool = await getPool();
+    await ensureBoxTables(pool);
+
+    const boxRes = await pool.request().input('bc', sql.NVarChar(150), boxCode)
+        .query(`SELECT * FROM GTP_PickBoxes WHERE BoxCode=@bc`);
+    const box = boxRes.recordset[0];
+    if (!box) throw Object.assign(new Error(`Box "${boxCode}" not found`), { status: 404 });
+
+    const cardName = await getCardName(pool, box.HeaderId, box.CardCode);
+
+    const lineRes = await pool.request().input('bid', sql.Int, box.BoxID)
+        .query(`SELECT ItemCode, SUM(ScannedQty) AS Qty
                 FROM GTP_ScanLog WHERE BoxID=@bid GROUP BY ItemCode`);
 
-    const lines = [];
+    // Pivot: rows = Product Name, columns = Size, cell = qty
+    const products = [];   // ordered list of distinct product names
+    const sizes    = [];   // ordered list of distinct sizes
+    const matrix   = {};   // matrix[product][size] = qty
+
     for (const row of lineRes.recordset) {
         const meta = await getItemMeta(pool, row.ItemCode);
-        lines.push({
-            itemCode: row.ItemCode,
-            styleNo:  meta.StyleNo  || '',
-            color:    meta.ItemColor|| '',
-            size:     meta.ItemSize || '',
-            barcode:  row.Barcode   || row.ItemCode,
-            qty:      Number(row.Qty),
-        });
-    }
+        const product = meta.ProductName || row.ItemCode;
+        const size    = meta.ItemSize || '-';
+        const qty     = Number(row.Qty);
 
-    let packedBy = 'Unknown';
-    if (box.CompletedByOperatorID) {
-        const opRes = await pool.request().input('oid', sql.Int, box.CompletedByOperatorID)
-            .query(`SELECT OperatorName FROM GTP_Operators WHERE OperatorID=@oid`);
-        packedBy = opRes.recordset[0]?.OperatorName || 'Unknown';
+        if (!products.includes(product)) products.push(product);
+        if (!sizes.includes(size)) sizes.push(size);
+        if (!matrix[product]) matrix[product] = {};
+        matrix[product][size] = (matrix[product][size] || 0) + qty;
+    }
+    sizes.sort((a, b) => (Number(a) || 0) - (Number(b) || 0) || a.localeCompare(b));
+
+    const rowTotals = {};
+    const colTotals = {};
+    let grandTotal = 0;
+    for (const product of products) {
+        let rowSum = 0;
+        for (const size of sizes) {
+            const qty = matrix[product]?.[size] || 0;
+            rowSum += qty;
+            colTotals[size] = (colTotals[size] || 0) + qty;
+        }
+        rowTotals[product] = rowSum;
+        grandTotal += rowSum;
     }
 
     return {
-        companyName:    COMPANY_NAME,
-        customerName:   cardName,
-        picklistNumber: box.HeaderId,
-        docEntry:       box.DocEntry,
-        itemGroupName:  box.ItemGroupName,
-        boxNumber:      box.BoxNumber,
-        boxTypeLabel:   box.BoxTypeLabel || null,
-        totalBoxes,
-        lines,
-        totalQty:  Number(box.PickedQty),
-        packedBy,
-        packedAt:  box.CompletedAt,
-        boxCode:   box.BoxCode,
-        status:    box.Status,
+        companyName:      COMPANY_NAME,
+        customerName:     cardName,
+        picklistNumber:   box.HeaderId,
+        salesOrderNumber: box.DocEntry,
+        boxNumber:        box.BoxCode,
+        itemGroupName:    box.ItemGroupName,
+        products, sizes, matrix, rowTotals, colTotals, grandTotal,
     };
 }
 
@@ -606,5 +682,5 @@ module.exports = {
     listBoxTypes, upsertBoxType, deleteBoxType,
     getBoxTypeMatrix, upsertBoxTypeCapacity, deleteBoxTypeCapacity,
     createBoxPlanForSession, applyScanQtyToBoxes, completeBoxManually,
-    getBoxesForSession, getBoxLabelData,
+    getBoxesForSession, getBoxIdentificationLabelData, getBoxContentsLabelData,
 };

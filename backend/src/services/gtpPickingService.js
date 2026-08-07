@@ -450,7 +450,7 @@ async function processScan(sessionId, barcode, cardCode) {
     const scanId = scanInsertRes.recordset[0].ScanID;
 
     // Route the picked qty into this item's Sales Order + item-group box plan
-    const { completedBoxes, firstBoxId } = await boxSvc.applyScanQtyToBoxes(
+    const { completedBoxes, firstBoxId, nextActivatedBox } = await boxSvc.applyScanQtyToBoxes(
         sessionId, cardCode, prog.DocEntry, prog.ItemGroupName, scanQty,
     );
     if (firstBoxId != null) {
@@ -527,6 +527,7 @@ async function processScan(sessionId, barcode, cardCode) {
         picklistCompleted:picklistDone,
         nextItemCode,
         completedBoxes,
+        nextActivatedBox,
     };
 }
 

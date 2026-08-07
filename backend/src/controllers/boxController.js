@@ -57,9 +57,16 @@ async function completeBox(req, res, next) {
     } catch (err) { next(err); }
 }
 
-async function getBoxLabel(req, res, next) {
+async function getBoxIdLabel(req, res, next) {
     try {
-        const data = await svc.getBoxLabelData(parseInt(req.params.boxId));
+        const data = await svc.getBoxIdentificationLabelData(parseInt(req.params.boxId));
+        res.json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
+async function getBoxContentsByNumber(req, res, next) {
+    try {
+        const data = await svc.getBoxContentsLabelData(req.params.boxNumber);
         res.json({ success: true, data });
     } catch (err) { next(err); }
 }
@@ -74,5 +81,5 @@ async function getSessionBoxes(req, res, next) {
 module.exports = {
     listBoxTypes, upsertBoxType, deleteBoxType,
     getBoxTypeMatrix, upsertBoxTypeCapacity, deleteBoxTypeCapacity,
-    completeBox, getBoxLabel, getSessionBoxes,
+    completeBox, getBoxIdLabel, getBoxContentsByNumber, getSessionBoxes,
 };

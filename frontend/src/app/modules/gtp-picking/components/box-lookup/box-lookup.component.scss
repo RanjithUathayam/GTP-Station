@@ -1,0 +1,83 @@
+$bg:       #0d1117;
+$surface:  #161b22;
+$border:   #30363d;
+$bar-bg:   #0f3460;
+$bar-line: #e94560;
+$text:     #e6edf3;
+$muted:    #8b949e;
+$blue:     #4fc3f7;
+$green:    #69f0ae;
+
+:host { display: block; height: 100%; }
+
+.lookup-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $bg;
+  color: $text;
+  font-family: 'Roboto', sans-serif;
+}
+
+.lookup-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px;
+  height: 56px;
+  min-height: 56px;
+  background: $bar-bg;
+  border-bottom: 3px solid $bar-line;
+  box-shadow: 0 2px 12px rgba(0,0,0,.45);
+
+  .bar-logo { color: $bar-line; font-size: 22px; }
+  .bar-title { font-weight: 700; font-size: 15px; letter-spacing: .4px; }
+  .bar-sub { font-size: 13px; color: $muted; }
+}
+
+.center-layout {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lookup-card {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 16px;
+  padding: 40px 44px;
+  text-align: center;
+  width: 380px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.4);
+}
+
+.lookup-icon-ring {
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  border: 2px solid rgba($blue, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  mat-icon { font-size: 32px; width: 32px; height: 32px; color: $blue; }
+}
+
+.lookup-heading { margin: 0 0 6px; font-size: 20px; }
+.lookup-sub { margin: 0 0 24px; font-size: 13px; color: $muted; }
+
+.lookup-field {
+  width: 100%;
+  ::ng-deep .mat-mdc-text-field-wrapper { background: $bg; }
+}
+
+.lookup-btn {
+  width: 100%;
+  height: 46px;
+  background: $blue;
+  color: #001018;
+  font-weight: 700;
+  mat-icon { margin-right: 6px; vertical-align: middle; }
+  &:disabled { opacity: .4; }
+}

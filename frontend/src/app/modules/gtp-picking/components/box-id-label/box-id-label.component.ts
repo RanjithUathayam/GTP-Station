@@ -2,17 +2,17 @@ import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import * as QRCode from 'qrcode';
 import { ApiService } from '../../../../core/services/api.service';
-import { BoxLabelData } from '../../../../core/models/picking.models';
+import { BoxIdLabelData } from '../../../../core/models/picking.models';
 
 @Component({
-  selector: 'app-box-label',
-  templateUrl: './box-label.component.html',
-  styleUrls: ['./box-label.component.scss'],
+  selector: 'app-box-id-label',
+  templateUrl: './box-id-label.component.html',
+  styleUrls: ['./box-id-label.component.scss'],
 })
-export class BoxLabelComponent implements OnInit {
+export class BoxIdLabelComponent implements OnInit {
   @ViewChild('qrCanvas') qrCanvasRef?: ElementRef<HTMLCanvasElement>;
 
-  label: BoxLabelData | null = null;
+  label: BoxIdLabelData | null = null;
   loading = true;
   error = '';
 
@@ -23,7 +23,7 @@ export class BoxLabelComponent implements OnInit {
 
   ngOnInit(): void {
     const boxId = Number(this.route.snapshot.paramMap.get('boxId'));
-    this.api.getBoxLabel(boxId).subscribe({
+    this.api.getBoxIdLabel(boxId).subscribe({
       next: (r) => {
         this.label   = r.data;
         this.loading = false;
@@ -38,9 +38,9 @@ export class BoxLabelComponent implements OnInit {
 
   private renderQr(): void {
     if (!this.label || !this.qrCanvasRef) return;
-    QRCode.toCanvas(this.qrCanvasRef.nativeElement, this.label.boxCode, { width: 110, margin: 0 })
+    QRCode.toCanvas(this.qrCanvasRef.nativeElement, this.label.boxNumber, { width: 70, margin: 0 })
       .then(() => setTimeout(() => window.print(), 150))
-      .catch((err) => console.error('[BoxLabel] QR render failed', err));
+      .catch((err) => console.error('[BoxIdLabel] QR render failed', err));
   }
 
   printNow(): void {

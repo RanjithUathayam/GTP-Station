@@ -1,0 +1,52 @@
+<div class="label-page">
+  <div class="label-loading" *ngIf="loading">Loading…</div>
+  <div class="label-error" *ngIf="error">{{ error }}</div>
+
+  <div class="label-card" *ngIf="label as l">
+    <div class="lbl-header">
+      <div class="lbl-company">{{ l.companyName }}</div>
+      <canvas #qrCanvas class="lbl-qr"></canvas>
+    </div>
+
+    <div class="lbl-row"><span>Customer</span>: <strong>{{ l.customerName }}</strong></div>
+    <div class="lbl-row">
+      <span>Pick List</span>: <strong>{{ l.picklistNumber }}</strong>
+      <span class="lbl-sep">Order</span>: <strong>{{ l.salesOrderNumber }}</strong>
+    </div>
+    <div class="lbl-row">
+      <span>Box No</span>: <strong>{{ l.boxNumber }}</strong>
+      <span class="lbl-sep">Group</span>: <strong>{{ l.itemGroupName }}</strong>
+    </div>
+
+    <table class="lbl-table">
+      <thead>
+        <tr>
+          <th class="lbl-th-product">Product Name</th>
+          <th *ngFor="let size of l.sizes">{{ size }}</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let product of l.products">
+          <td class="lbl-td-product">{{ product }}</td>
+          <td *ngFor="let size of l.sizes">{{ cellQty(product, size) || '' }}</td>
+          <td class="lbl-total">{{ l.rowTotals[product] }}</td>
+        </tr>
+        <tr *ngIf="!l.products.length">
+          <td class="lbl-empty" [attr.colspan]="l.sizes.length + 2">No items recorded for this box</td>
+        </tr>
+      </tbody>
+      <tfoot *ngIf="l.products.length">
+        <tr>
+          <td class="lbl-td-product">Total</td>
+          <td *ngFor="let size of l.sizes">{{ l.colTotals[size] }}</td>
+          <td class="lbl-total">{{ l.grandTotal }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <button mat-stroked-button class="lbl-print-btn no-print" (click)="printNow()">
+      <mat-icon>print</mat-icon> Print
+    </button>
+  </div>
+</div>

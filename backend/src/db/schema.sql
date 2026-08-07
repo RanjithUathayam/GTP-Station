@@ -374,3 +374,8 @@ CREATE TABLE GTP_PickBoxes (
 GO
 CREATE INDEX IX_PickBoxes_Session ON GTP_PickBoxes (SessionID, CardCode, DocEntry, ItemGroupName);
 GO
+
+-- Global, sequential, human-readable Box Number (BX000001, BX000002, ...) —
+-- unique across every picklist ever run. Stored directly in BoxCode above.
+CREATE SEQUENCE GTP_BoxNumberSeq AS INT START WITH 1 INCREMENT BY 1;
+GO

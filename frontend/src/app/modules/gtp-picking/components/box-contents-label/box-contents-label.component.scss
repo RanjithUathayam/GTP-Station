@@ -1,0 +1,116 @@
+:host { display: block; background: #666; min-height: 100vh; }
+
+.label-page {
+  width: 90mm;
+  min-height: 45mm;
+  margin: 10px auto;
+  background: #fff;
+  color: #000;
+  font-family: 'Roboto', Arial, sans-serif;
+  box-shadow: 0 0 8px rgba(0, 0, 0, .35);
+}
+
+.label-loading, .label-error {
+  padding: 4mm;
+  text-align: center;
+  font-size: 10px;
+}
+
+.label-card {
+  padding: 2.5mm 3mm;
+  box-sizing: border-box;
+}
+
+.lbl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2mm;
+  margin-bottom: 1mm;
+}
+
+.lbl-company {
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lbl-qr {
+  width: 12mm !important;
+  height: 12mm !important;
+  flex-shrink: 0;
+}
+
+.lbl-row {
+  display: flex;
+  gap: 3px;
+  font-size: 6.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+
+  span { color: #444; flex-shrink: 0; }
+  strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+.lbl-sep { margin-left: 3mm; }
+
+.lbl-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5mm;
+  font-size: 6px;
+
+  th, td {
+    border: 1px solid #999;
+    padding: 0.6mm 1mm;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  th { background: #eee; font-weight: 700; }
+
+  .lbl-th-product, .lbl-td-product {
+    text-align: left;
+    max-width: 22mm;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lbl-total { font-weight: 700; }
+
+  tfoot td { background: #f5f5f5; font-weight: 700; }
+}
+
+.lbl-empty {
+  font-style: italic;
+  color: #666;
+  text-align: center;
+  padding: 2mm !important;
+}
+
+.lbl-print-btn {
+  margin: 1.5mm auto 0;
+  display: block;
+  font-size: 9px !important;
+  height: 20px !important;
+  line-height: 20px !important;
+  padding: 0 8px !important;
+  mat-icon { font-size: 12px; width: 12px; height: 12px; vertical-align: middle; }
+}
+
+@media print {
+  :host { background: none; }
+  .no-print { display: none !important; }
+  .label-page {
+    margin: 0;
+    box-shadow: none;
+    width: 90mm;
+    min-height: 45mm;
+  }
+  @page {
+    size: 90mm auto;
+    margin: 0;
+  }
+}

@@ -1,0 +1,27 @@
+<div class="label-page">
+  <div class="label-loading" *ngIf="loading">Loading…</div>
+  <div class="label-error" *ngIf="error">{{ error }}</div>
+
+  <div class="label-card" *ngIf="label as l">
+    <div class="lbl-company">{{ l.companyName }}</div>
+
+    <div class="lbl-main">
+      <div class="lbl-text">
+        <div class="lbl-row"><span>Customer</span>: <strong>{{ l.customerName }}</strong></div>
+        <div class="lbl-row"><span>Pick List</span>: <strong>{{ l.picklistNumber }}</strong></div>
+        <div class="lbl-row"><span>Sales Order</span>: <strong>{{ l.salesOrderNumber }}</strong></div>
+        <div class="lbl-row"><span>Item Group</span>: <strong>{{ l.itemGroupName }}</strong></div>
+        <div class="lbl-row lbl-boxno"><span>Box No</span>: <strong>{{ l.boxNumber }}</strong></div>
+        <div class="lbl-row"><span>Box</span>: <strong>{{ l.boxSequence }} of {{ l.totalBoxes }}</strong>
+          <span *ngIf="l.boxTypeLabel" class="lbl-boxtype">({{ l.boxTypeLabel }})</span>
+        </div>
+        <div class="lbl-timestamp">{{ formatDateTime(l.createdAt) }}</div>
+      </div>
+      <div class="lbl-qr"><canvas #qrCanvas></canvas></div>
+    </div>
+
+    <button mat-stroked-button class="lbl-print-btn no-print" (click)="printNow()">
+      <mat-icon>print</mat-icon> Print
+    </button>
+  </div>
+</div>

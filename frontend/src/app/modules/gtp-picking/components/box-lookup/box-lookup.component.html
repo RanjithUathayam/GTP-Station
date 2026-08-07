@@ -1,0 +1,32 @@
+<div class="lookup-page">
+  <div class="lookup-bar">
+    <mat-icon class="bar-logo">qr_code_scanner</mat-icon>
+    <span class="bar-title">Box Lookup</span>
+    <span class="bar-sub">— scan a box's QR code to print its contents summary</span>
+  </div>
+
+  <div class="center-layout">
+    <div class="lookup-card">
+      <div class="lookup-icon-ring">
+        <mat-icon>inventory_2</mat-icon>
+      </div>
+      <h2 class="lookup-heading">Scan Box Number</h2>
+      <p class="lookup-sub">Scan or type the Box Number (e.g. BX000025) printed on the box label</p>
+
+      <mat-form-field appearance="outline" class="lookup-field">
+        <mat-label>Box Number</mat-label>
+        <input matInput #boxInputEl
+               [(ngModel)]="boxNumber"
+               (keydown.enter)="lookup()"
+               placeholder="BX000025"
+               autocomplete="off"
+               autofocus>
+        <mat-icon matSuffix>qr_code_2</mat-icon>
+      </mat-form-field>
+
+      <button mat-raised-button class="lookup-btn" [disabled]="!boxNumber" (click)="lookup()">
+        <mat-icon>print</mat-icon> Print Contents Label
+      </button>
+    </div>
+  </div>
+</div>

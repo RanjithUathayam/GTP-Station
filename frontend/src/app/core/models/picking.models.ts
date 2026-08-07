@@ -64,30 +64,35 @@ export interface BoxTypeMatrixRow extends BoxType {
   capacities: BoxTypeCapacityCell[];
 }
 
-export interface BoxLabelLine {
-  itemCode: string;
-  styleNo:  string;
-  color:    string;
-  size:     string;
-  barcode:  string;
-  qty:      number;
+// Printed for an empty box, before anything is packed into it.
+export interface BoxIdLabelData {
+  companyName:      string;
+  customerName:     string;
+  picklistNumber:   string;
+  salesOrderNumber: number;
+  itemGroupName:    string;
+  boxNumber:        string;   // human Box Number, e.g. "BX000025"
+  boxTypeLabel:     string | null;
+  boxSequence:      number;   // this box's position (Box X of totalBoxes)
+  totalBoxes:       number;
+  createdAt:        string;
 }
 
-export interface BoxLabelData {
-  companyName:    string;
-  customerName:   string;
-  picklistNumber: string;
-  docEntry:       number;
-  itemGroupName:  string;
-  boxNumber:      number;
-  boxTypeLabel:   string | null;
-  totalBoxes:     number;
-  lines:          BoxLabelLine[];
-  totalQty:       number;
-  packedBy:       string;
-  packedAt:       string | null;
-  boxCode:        string;
-  status:         string;
+// Printed on-demand after a completed box's QR code is scanned — a
+// Product Name x Size pivot of everything actually packed into it.
+export interface BoxContentsLabelData {
+  companyName:      string;
+  customerName:     string;
+  picklistNumber:   string;
+  salesOrderNumber: number;
+  boxNumber:        string;
+  itemGroupName:    string;
+  products:         string[];
+  sizes:            string[];
+  matrix:           Record<string, Record<string, number>>;
+  rowTotals:        Record<string, number>;
+  colTotals:        Record<string, number>;
+  grandTotal:       number;
 }
 
 export interface CompletedBoxRef {
@@ -97,6 +102,11 @@ export interface CompletedBoxRef {
   cardCode:      string;
   docEntry:      number;
   targetQty:     number;
+}
+
+export interface NextActivatedBoxRef {
+  boxId:     number;
+  boxNumber: number;
 }
 
 export interface ScannedPart {
@@ -161,6 +171,7 @@ export interface PickScanResult {
   picklistCompleted: boolean;
   nextItemCode:      string | null;
   completedBoxes:    CompletedBoxRef[];
+  nextActivatedBox:  NextActivatedBoxRef | null;
 }
 
 export interface ScanFeedback {

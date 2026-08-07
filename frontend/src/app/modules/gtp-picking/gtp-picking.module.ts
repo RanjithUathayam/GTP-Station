@@ -14,10 +14,15 @@ import { MatRippleModule } from '@angular/material/core';
 import { GtpPickingRoutingModule } from './gtp-picking-routing.module';
 import { PickingShellComponent } from './components/picking-shell/picking-shell.component';
 import { DeliveryStatusComponent } from './components/delivery-status/delivery-status.component';
-import { BoxLabelComponent } from './components/box-label/box-label.component';
+import { BoxIdLabelComponent } from './components/box-id-label/box-id-label.component';
+import { BoxContentsLabelComponent } from './components/box-contents-label/box-contents-label.component';
+import { BoxLookupComponent } from './components/box-lookup/box-lookup.component';
 
 @NgModule({
-  declarations: [PickingShellComponent, DeliveryStatusComponent, BoxLabelComponent],
+  declarations: [
+    PickingShellComponent, DeliveryStatusComponent,
+    BoxIdLabelComponent, BoxContentsLabelComponent, BoxLookupComponent,
+  ],
   imports: [
     CommonModule,
     FormsModule,

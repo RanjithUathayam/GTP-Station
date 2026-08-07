@@ -19,7 +19,8 @@ router.get('/sessions',                                         statusCtrl.getSe
 
 // Box management (box completion, labels)
 router.post('/box/:boxId/complete',                             boxCtrl.completeBox);
-router.get('/box/:boxId/label',                                 boxCtrl.getBoxLabel);
+router.get('/box/:boxId/id-label',                              boxCtrl.getBoxIdLabel);
+router.get('/box-lookup/:boxNumber/contents',                   boxCtrl.getBoxContentsByNumber);
 router.get('/session/:sessionId/boxes',                         boxCtrl.getSessionBoxes);
 
 // Box Types + per-item-group capacity matrix

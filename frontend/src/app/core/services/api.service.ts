@@ -7,7 +7,7 @@ import {
   Station, PTLSession, PagedResponse, ScanResult
 } from '../models';
 import {
-  BoxLabelData, ItemGroupBoxSummary, PickBox, BoxType, BoxTypeMatrixRow,
+  BoxIdLabelData, BoxContentsLabelData, ItemGroupBoxSummary, PickBox, BoxType, BoxTypeMatrixRow,
 } from '../models/picking.models';
 
 @Injectable({ providedIn: 'root' })
@@ -125,12 +125,16 @@ export class ApiService {
     return this.http.delete<any>(`${this.base}/picking/box-types/${boxTypeId}/capacity/${encodeURIComponent(itemGroupName)}`);
   }
 
-  completeBox(boxId: number, operatorId?: number): Observable<{ success: boolean; data: PickBox }> {
+  completeBox(boxId: number, operatorId?: number): Observable<{ success: boolean; data: PickBox & { nextActivatedBox: { boxId: number; boxNumber: number } | null } }> {
     return this.http.post<any>(`${this.base}/picking/box/${boxId}/complete`, { operatorId });
   }
 
-  getBoxLabel(boxId: number): Observable<{ success: boolean; data: BoxLabelData }> {
-    return this.http.get<any>(`${this.base}/picking/box/${boxId}/label`);
+  getBoxIdLabel(boxId: number): Observable<{ success: boolean; data: BoxIdLabelData }> {
+    return this.http.get<any>(`${this.base}/picking/box/${boxId}/id-label`);
+  }
+
+  getBoxContentsByNumber(boxNumber: string): Observable<{ success: boolean; data: BoxContentsLabelData }> {
+    return this.http.get<any>(`${this.base}/picking/box-lookup/${encodeURIComponent(boxNumber)}/contents`);
   }
 
   getSessionBoxes(sessionId: number): Observable<{ success: boolean; data: ItemGroupBoxSummary[] }> {
