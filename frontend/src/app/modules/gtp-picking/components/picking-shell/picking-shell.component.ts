@@ -434,7 +434,10 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     const targetParty = this.findPartyForItem(itemCode);
     if (!targetParty) {
       this.scanInput = '';
-      this.setScanFeedback('invalid', `Item "${itemCode}" not found in any pending party`);
+      const message = this.itemExistsAnywhere(itemCode)
+        ? `Item "${itemCode}" already fully picked`
+        : `Item "${itemCode}" not found in any pending party`;
+      this.setScanFeedback('invalid', message);
       setTimeout(() => this.itemScanInputRef?.nativeElement.focus(), 50);
       return;
     }
@@ -520,6 +523,13 @@ export class PickingShellComponent implements OnInit, OnDestroy {
       if (match) return party;
     }
     return null;
+  }
+
+  // Used to tell "unknown item" apart from "item exists but already fully
+  // picked" — findPartyForItem() returns null for both cases.
+  private itemExistsAnywhere(itemCode: string): boolean {
+    if (!this.session) return false;
+    return this.session.parties.some(party => party.items.some(i => i.itemCode === itemCode));
   }
 
   setScanFeedback(state: ScanFeedback['state'], message: string): void {
