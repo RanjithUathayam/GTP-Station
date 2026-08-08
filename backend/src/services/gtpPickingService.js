@@ -144,37 +144,49 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
                 VALUES (@hid, @opid, @stn, @ords)`);
     const sessionId = sesRes.recordset[0].SessionID;
 
-    // Seed GTP_PickProgress — one row per CardCode + ProductCode; also aggregate
-    // per (CardCode, DocEntry, ItemGroupName) totals for the box-management
+    // Seed GTP_PickProgress — one row per CardCode + ProductCode, with RequiredQty
+    // summed across every WMS order line for that pair (the same item can appear
+    // on more than one line/order for a customer); also aggregate per
+    // (CardCode, DocEntry, ItemGroupName) totals for the box-management
     // plan below — box plans are per Sales Order, not per customer.
-    const seen = new Set();
+    const progressTotals = new Map(); // "CardCode|ProductCode" -> { cardCode, itemCode, itemGroupName, docEntry, reqQty }
     const groupTotals = new Map(); // composite key -> { cardCode, docEntry, itemGroupName, totalQty }
     for (const r of rows) {
-        const key = `${r.CardCode}|${r.ProductCode}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
         const itemGroupName = r.ItemGroupName || 'UNSPECIFIED';
-        await pool.request()
-            .input('sid',  sql.Int,           sessionId)
-            .input('hid',  sql.NVarChar(50),  headerId)
-            .input('cc',   sql.NVarChar(50),  r.CardCode)
-            .input('ic',   sql.NVarChar(50),  r.ProductCode)
-            .input('rqty', sql.Decimal(10,2), r.ReqQty)
-            .input('ig',   sql.NVarChar(100), itemGroupName)
-            .input('de',   sql.Int,           r.DocEntry)
-            .query(`INSERT INTO GTP_PickProgress
-                        (SessionID, HeaderId, CardCode, ItemCode, RequiredQty, ItemGroupName, DocEntry)
-                    VALUES (@sid, @hid, @cc, @ic, @rqty, @ig, @de)`);
+
+        const key = `${r.CardCode}|${r.ProductCode}`;
+        const existingProgress = progressTotals.get(key);
+        if (existingProgress) {
+            existingProgress.reqQty += Number(r.ReqQty);
+        } else {
+            progressTotals.set(key, {
+                cardCode: r.CardCode, itemCode: r.ProductCode, itemGroupName,
+                docEntry: r.DocEntry, reqQty: Number(r.ReqQty),
+            });
+        }
 
         const gKey = `${r.CardCode}|${r.DocEntry}|${itemGroupName}`;
-        const existing = groupTotals.get(gKey);
-        if (existing) {
-            existing.totalQty += Number(r.ReqQty);
+        const existingGroup = groupTotals.get(gKey);
+        if (existingGroup) {
+            existingGroup.totalQty += Number(r.ReqQty);
         } else {
             groupTotals.set(gKey, {
                 cardCode: r.CardCode, docEntry: r.DocEntry, itemGroupName, totalQty: Number(r.ReqQty),
             });
         }
+    }
+    for (const { cardCode, itemCode, itemGroupName, docEntry, reqQty } of progressTotals.values()) {
+        await pool.request()
+            .input('sid',  sql.Int,           sessionId)
+            .input('hid',  sql.NVarChar(50),  headerId)
+            .input('cc',   sql.NVarChar(50),  cardCode)
+            .input('ic',   sql.NVarChar(50),  itemCode)
+            .input('rqty', sql.Decimal(10,2), reqQty)
+            .input('ig',   sql.NVarChar(100), itemGroupName)
+            .input('de',   sql.Int,           docEntry)
+            .query(`INSERT INTO GTP_PickProgress
+                        (SessionID, HeaderId, CardCode, ItemCode, RequiredQty, ItemGroupName, DocEntry)
+                    VALUES (@sid, @hid, @cc, @ic, @rqty, @ig, @de)`);
     }
 
     // Build the box plan — one set of boxes per (CardCode, DocEntry, ItemGroupName)
