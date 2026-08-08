@@ -526,10 +526,13 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   }
 
   // Used to tell "unknown item" apart from "item exists but already fully
-  // picked" — findPartyForItem() returns null for both cases.
+  // picked" — findPartyForItem() returns null for both cases. Only the exact
+  // pickedQty === requiredQty match counts as "already picked".
   private itemExistsAnywhere(itemCode: string): boolean {
     if (!this.session) return false;
-    return this.session.parties.some(party => party.items.some(i => i.itemCode === itemCode));
+    return this.session.parties.some(party =>
+      party.items.some(i => i.itemCode === itemCode && i.pickedQty === i.requiredQty),
+    );
   }
 
   setScanFeedback(state: ScanFeedback['state'], message: string): void {
