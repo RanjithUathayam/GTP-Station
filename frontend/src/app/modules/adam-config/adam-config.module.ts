@@ -10,6 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTableModule } from '@angular/material/table';
+import { MatSelectModule } from '@angular/material/select';
 
 import { AdamConfigRoutingModule } from './adam-config-routing.module';
 import { AdamConfigComponent } from './components/adam-config.component';
@@ -29,6 +30,7 @@ import { AdamConfigComponent } from './components/adam-config.component';
     MatFormFieldModule,
     MatSlideToggleModule,
     MatTableModule,
+    MatSelectModule,
   ],
 })
 export class AdamConfigModule {}

@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const logger = require('../utils/logger');
+const printerSvc = require('./printerService');
 
 const COMPANY_NAME = process.env.COMPANY_NAME || 'UATHAYAM';
 
@@ -677,10 +678,52 @@ async function getBoxContentsLabelData(boxCode) {
     };
 }
 
+// ── Auto-print (replaces the browser-tab flow when a station has an active
+// printer configured) ────────────────────────────────────────────────────
+function buildIdLabelSpec(idData) {
+    const fields = [
+        { label: 'Company',    value: idData.companyName },
+        { label: 'Customer',   value: idData.customerName },
+        { label: 'Picklist',   value: idData.picklistNumber },
+        { label: 'Order',      value: idData.salesOrderNumber },
+        { label: 'Item Group', value: idData.itemGroupName },
+        { label: 'Box',        value: `${idData.boxSequence} of ${idData.totalBoxes}` },
+    ];
+    if (idData.boxTypeLabel) fields.push({ label: 'Box Type', value: idData.boxTypeLabel });
+    return { fields, qrData: idData.boxNumber };
+}
+
+// Looks up the box's station (via its session) and, if that station has an
+// active printer configured, prints its Identification label directly —
+// the picking-shell frontend skips its own browser-print fallback whenever
+// this reports `printed: true`. Never throws — a print failure shouldn't
+// break the picking flow, it just falls back to `printed: false`.
+async function printIdLabelForBox(boxId) {
+    try {
+        const pool = await getPool();
+        const boxRes = await pool.request().input('bid', sql.Int, boxId)
+            .query(`SELECT SessionID FROM GTP_PickBoxes WHERE BoxID=@bid`);
+        const sessionId = boxRes.recordset[0]?.SessionID;
+        if (!sessionId) return { printed: false };
+
+        const stnRes = await pool.request().input('sid', sql.Int, sessionId)
+            .query(`SELECT StationId FROM GTP_PicklistSessions WHERE SessionID=@sid`);
+        const stationId = stnRes.recordset[0]?.StationId;
+        if (!stationId) return { printed: false };
+
+        const idData = await getBoxIdentificationLabelData(boxId);
+        return await printerSvc.printLabel(stationId, 'Identification', buildIdLabelSpec(idData), boxId);
+    } catch (err) {
+        logger.error(`[PRINT] Auto-print box ${boxId} ID label failed: ${err.message}`);
+        return { printed: false, error: err.message };
+    }
+}
+
 module.exports = {
     ensureBoxTables,
     listBoxTypes, upsertBoxType, deleteBoxType,
     getBoxTypeMatrix, upsertBoxTypeCapacity, deleteBoxTypeCapacity,
     createBoxPlanForSession, applyScanQtyToBoxes, completeBoxManually,
     getBoxesForSession, getBoxIdentificationLabelData, getBoxContentsLabelData,
+    printIdLabelForBox,
 };

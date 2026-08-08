@@ -376,7 +376,10 @@ export class PickingShellComponent implements OnInit, OnDestroy {
         this.boxCompleting = false;
         // Print the NEXT box's ID label (before it's filled) — not the one
         // that just completed; nothing prints if that was the group's last box.
-        if (r.data.nextActivatedBox) this.openBoxIdLabel(r.data.nextActivatedBox.boxId);
+        // If the station has an active printer configured, the backend already
+        // sent it directly — only fall back to the browser tab when it didn't.
+        const next = r.data.nextActivatedBox;
+        if (next && !next.autoPrinted) this.openBoxIdLabel(next.boxId);
         this.refreshSession();
       },
       error: (err) => {
@@ -392,12 +395,15 @@ export class PickingShellComponent implements OnInit, OnDestroy {
 
   // Batch-prints every box group's first ID label at once, right after a NEW
   // session is created (not on resume — those labels already printed once).
+  // Boxes the backend already sent to a configured station printer are
+  // listed in `autoPrintedBoxIds` and are skipped here.
   private printAllFirstBoxLabels(session: PicklistSession | null): void {
     if (!session) return;
+    const autoPrinted = new Set(session.autoPrintedBoxIds || []);
     for (const party of session.parties) {
       for (const order of party.orders || []) {
         for (const group of order.boxGroups || []) {
-          if (group.currentBox && group.currentBox.boxNumber === 1) {
+          if (group.currentBox && group.currentBox.boxNumber === 1 && !autoPrinted.has(group.currentBox.boxId)) {
             this.openBoxIdLabel(group.currentBox.boxId);
           }
         }
@@ -452,7 +458,10 @@ export class PickingShellComponent implements OnInit, OnDestroy {
 
         // A box just filled up — print the NEXT box's ID label before the
         // picker starts filling it (nothing prints if that was the last box).
-        if (data.nextActivatedBox) this.openBoxIdLabel(data.nextActivatedBox.boxId);
+        // Skip the browser tab when the backend already auto-printed it.
+        if (data.nextActivatedBox && !data.nextActivatedBox.autoPrinted) {
+          this.openBoxIdLabel(data.nextActivatedBox.boxId);
+        }
 
         if (data.picklistCompleted) {
           this.setScanFeedback('done', `Picklist ${this.session!.headerId} completed!`);

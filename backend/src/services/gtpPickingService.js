@@ -205,7 +205,25 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
     }
 
     ws.broadcast('PICKLIST_STARTED', { sessionId, headerId });
-    return getSession(sessionId);
+
+    const session = await getSession(sessionId);
+
+    // Batch-print every box group's first ID label now, before the picker
+    // starts filling any box — if this station has an active printer
+    // configured, this replaces the picking-shell's own browser-print tab.
+    const autoPrintedBoxIds = [];
+    for (const party of session.parties) {
+        for (const order of party.orders || []) {
+            for (const group of order.boxGroups || []) {
+                if (group.currentBox && group.currentBox.boxNumber === 1) {
+                    const result = await boxSvc.printIdLabelForBox(group.currentBox.boxId);
+                    if (result.printed) autoPrintedBoxIds.push(group.currentBox.boxId);
+                }
+            }
+        }
+    }
+    session.autoPrintedBoxIds = autoPrintedBoxIds;
+    return session;
 }
 
 // ── Get full session state ─────────────────────────────────────
@@ -460,6 +478,14 @@ async function processScan(sessionId, barcode, cardCode) {
             .query(`UPDATE GTP_ScanLog SET BoxID=@bid WHERE ScanID=@scid`);
     }
     completedBoxes.forEach(b => ws.broadcast('BOX_COMPLETED', { sessionId, ...b }));
+
+    // The next box just went Active — print its ID label before the picker
+    // starts filling it; picking-shell skips its own browser-print tab when
+    // this reports true (station has an active printer configured).
+    if (nextActivatedBox) {
+        const printResult = await boxSvc.printIdLabelForBox(nextActivatedBox.boxId);
+        nextActivatedBox.autoPrinted = printResult.printed;
+    }
 
     // Check party completion
     const partyProgRes = await pool.request()

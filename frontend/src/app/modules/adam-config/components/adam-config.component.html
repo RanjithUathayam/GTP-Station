@@ -150,4 +150,184 @@
     </mat-card-content>
   </mat-card>
 
+  <!-- ── Station Label Printers ─────────────────────────────────────────────── -->
+  <div class="page-header printers-header">
+    <div class="header-left">
+      <mat-icon class="page-icon">print</mat-icon>
+      <div>
+        <h1 class="page-title">Station Label Printers</h1>
+        <p class="page-sub">Per-station network printer — box labels print here automatically, no manual selection</p>
+      </div>
+    </div>
+    <button mat-raised-button color="primary" (click)="openAddPrinterForm()">
+      <mat-icon>add</mat-icon> Add Printer
+    </button>
+  </div>
+
+  <mat-card class="form-card" *ngIf="printerFormOpen">
+    <mat-card-content>
+      <div class="form-title">{{ editingPrinter ? 'Edit Printer — ' + editingPrinter.DeviceCode : 'Add Printer' }}</div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="grow">
+          <mat-label>Device Code</mat-label>
+          <input matInput [(ngModel)]="printerForm.deviceCode" placeholder="e.g. STN-01" />
+          <mat-hint>Matches the station's Device Code — one printer per station</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="grow">
+          <mat-label>Printer Name</mat-label>
+          <input matInput [(ngModel)]="printerForm.printerName" placeholder="e.g. Station 1 Label Printer" />
+        </mat-form-field>
+      </div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="grow">
+          <mat-label>Printer IP Address</mat-label>
+          <input matInput [(ngModel)]="printerForm.ipAddress" placeholder="10.0.210.90" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Port</mat-label>
+          <input matInput type="number" [(ngModel)]="printerForm.port" />
+        </mat-form-field>
+      </div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Printer Type</mat-label>
+          <mat-select [(ngModel)]="printerForm.printerType">
+            <mat-option *ngFor="let t of printerTypes" [value]="t">{{ t }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Protocol</mat-label>
+          <mat-select [(ngModel)]="printerForm.protocol">
+            <mat-option *ngFor="let p of printerProtocols" [value]="p">{{ p }}</mat-option>
+          </mat-select>
+          <mat-hint *ngIf="printerForm.protocol === 'WindowsDriver'">Not implemented yet — use a TCP/IP protocol</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>DPI</mat-label>
+          <input matInput type="number" [(ngModel)]="printerForm.dpi" />
+        </mat-form-field>
+      </div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Paper Width (mm)</mat-label>
+          <input matInput type="number" [(ngModel)]="printerForm.paperWidthMm" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Label Height (mm)</mat-label>
+          <input matInput type="number" [(ngModel)]="printerForm.labelHeightMm" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Timeout (ms)</mat-label>
+          <input matInput type="number" [(ngModel)]="printerForm.timeoutMs" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="narrow">
+          <mat-label>Retry Count</mat-label>
+          <input matInput type="number" [(ngModel)]="printerForm.retryCount" />
+        </mat-form-field>
+      </div>
+
+      <div class="form-row">
+        <mat-slide-toggle [(ngModel)]="printerForm.isActive">Active</mat-slide-toggle>
+      </div>
+
+      <div class="form-error" *ngIf="printerFormError">{{ printerFormError }}</div>
+
+      <div class="form-actions">
+        <button mat-button (click)="closePrinterForm()">Cancel</button>
+        <button mat-raised-button color="primary" [disabled]="printerSaving" (click)="savePrinter()">
+          <mat-spinner *ngIf="printerSaving" diameter="16" class="btn-spinner"></mat-spinner>
+          <span *ngIf="!printerSaving">{{ editingPrinter ? 'Save Changes' : 'Create' }}</span>
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="table-card">
+    <mat-card-content>
+      <table mat-table [dataSource]="printers" class="config-table">
+
+        <ng-container matColumnDef="code">
+          <th mat-header-cell *matHeaderCellDef>Device Code</th>
+          <td mat-cell *matCellDef="let p"><span class="station-code">{{ p.DeviceCode }}</span></td>
+        </ng-container>
+
+        <ng-container matColumnDef="printer">
+          <th mat-header-cell *matHeaderCellDef>Printer</th>
+          <td mat-cell *matCellDef="let p">{{ p.PrinterName }} <span class="unit-badge">{{ p.PrinterType }}</span></td>
+        </ng-container>
+
+        <ng-container matColumnDef="endpoint">
+          <th mat-header-cell *matHeaderCellDef>Endpoint</th>
+          <td mat-cell *matCellDef="let p"><code>{{ p.IpAddress }}:{{ p.Port }}</code></td>
+        </ng-container>
+
+        <ng-container matColumnDef="protocol">
+          <th mat-header-cell *matHeaderCellDef>Protocol</th>
+          <td mat-cell *matCellDef="let p">{{ p.Protocol }} <span class="unit-badge">{{ p.DPI }} dpi</span></td>
+        </ng-container>
+
+        <ng-container matColumnDef="active">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let p">
+            <span class="status-chip" [class.active]="p.IsActive">{{ p.IsActive ? 'Active' : 'Inactive' }}</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Connectivity</th>
+          <td mat-cell *matCellDef="let p">
+            <button mat-stroked-button class="check-btn" [disabled]="printerCheckingStatus.has(p.DeviceCode)" (click)="checkPrinterStatus(p)">
+              <mat-spinner *ngIf="printerCheckingStatus.has(p.DeviceCode)" diameter="14" class="btn-spinner"></mat-spinner>
+              <span *ngIf="!printerCheckingStatus.has(p.DeviceCode) && !printerStatus[p.DeviceCode]">Check</span>
+              <span *ngIf="!printerCheckingStatus.has(p.DeviceCode) && printerStatus[p.DeviceCode]" class="status-chip"
+                    [class.active]="printerStatus[p.DeviceCode] === 'online'">
+                {{ printerStatus[p.DeviceCode] === 'online' ? 'Online' : (printerStatus[p.DeviceCode] === 'offline' ? 'Offline' : 'Unknown') }}
+              </span>
+            </button>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let p">
+            <button mat-icon-button matTooltip="Test Print" [disabled]="printerTesting.has(p.DeviceCode)" (click)="testPrintPrinter(p)">
+              <mat-spinner *ngIf="printerTesting.has(p.DeviceCode)" diameter="16" class="btn-spinner"></mat-spinner>
+              <mat-icon *ngIf="!printerTesting.has(p.DeviceCode)">print</mat-icon>
+            </button>
+            <button mat-icon-button matTooltip="Edit" (click)="openEditPrinterForm(p)"><mat-icon>edit</mat-icon></button>
+            <button mat-icon-button matTooltip="Deactivate" (click)="deletePrinter(p)" [disabled]="!p.IsActive">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="printerColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: printerColumns;"></tr>
+      </table>
+
+      <div class="error-state" *ngIf="!printersLoading && printersLoadError">
+        <mat-icon>error_outline</mat-icon>
+        <span>{{ printersLoadError }}</span>
+        <button mat-button color="primary" (click)="refreshPrinters()">Retry</button>
+      </div>
+      <div class="empty-state" *ngIf="!printersLoading && !printersLoadError && printers.length === 0">
+        No station printers configured yet. Please click "Add Printer" to create one.
+      </div>
+      <div class="loading-state" *ngIf="printersLoading">
+        <mat-spinner diameter="28"></mat-spinner>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
 </div>

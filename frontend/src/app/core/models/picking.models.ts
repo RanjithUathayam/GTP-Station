@@ -105,8 +105,9 @@ export interface CompletedBoxRef {
 }
 
 export interface NextActivatedBoxRef {
-  boxId:     number;
-  boxNumber: number;
+  boxId:       number;
+  boxNumber:   number;
+  autoPrinted?: boolean;
 }
 
 export interface ScannedPart {
@@ -159,6 +160,7 @@ export interface PicklistSession {
   parties:           PicklistParty[];
   totalParties:      number;
   completedParties:  number;
+  autoPrintedBoxIds?: number[];
 }
 
 export interface PickScanResult {

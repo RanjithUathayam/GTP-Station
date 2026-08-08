@@ -8,6 +8,7 @@ import {
 } from '../models';
 import {
   BoxIdLabelData, BoxContentsLabelData, ItemGroupBoxSummary, PickBox, BoxType, BoxTypeMatrixRow,
+  NextActivatedBoxRef,
 } from '../models/picking.models';
 
 @Injectable({ providedIn: 'root' })
@@ -125,7 +126,7 @@ export class ApiService {
     return this.http.delete<any>(`${this.base}/picking/box-types/${boxTypeId}/capacity/${encodeURIComponent(itemGroupName)}`);
   }
 
-  completeBox(boxId: number, operatorId?: number): Observable<{ success: boolean; data: PickBox & { nextActivatedBox: { boxId: number; boxNumber: number } | null } }> {
+  completeBox(boxId: number, operatorId?: number): Observable<{ success: boolean; data: PickBox & { nextActivatedBox: NextActivatedBoxRef | null } }> {
     return this.http.post<any>(`${this.base}/picking/box/${boxId}/complete`, { operatorId });
   }
 

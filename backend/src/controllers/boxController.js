@@ -53,6 +53,10 @@ async function completeBox(req, res, next) {
             parseInt(req.params.boxId),
             operatorId ? parseInt(operatorId) : null,
         );
+        if (box.nextActivatedBox) {
+            const printResult = await svc.printIdLabelForBox(box.nextActivatedBox.boxId);
+            box.nextActivatedBox.autoPrinted = printResult.printed;
+        }
         res.json({ success: true, data: box });
     } catch (err) { next(err); }
 }

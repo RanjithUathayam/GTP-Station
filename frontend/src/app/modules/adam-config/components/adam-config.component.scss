@@ -154,3 +154,15 @@ $radius:   10px;
 
   mat-icon { flex-shrink: 0; }
 }
+
+// ── Station Label Printers section ──────────────────────────────────────
+.printers-header { margin-top: 12px; padding-top: 20px; border-top: 1px solid $border; }
+
+.check-btn {
+  height: 30px;
+  min-width: 64px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

@@ -147,6 +147,24 @@ export interface AdamDeviceConfig {
   UpdatedAt?: string | null;
 }
 
+export interface PrinterConfig {
+  PrinterConfigID: number;
+  DeviceCode: string;
+  PrinterName: string;
+  IpAddress: string;
+  Port: number;
+  PrinterType: string;
+  Protocol: 'ZPL' | 'EPL' | 'TSPL' | 'CPCL' | 'ESCPOS' | 'RAW' | 'WindowsDriver';
+  DPI: number;
+  PaperWidthMm: number;
+  LabelHeightMm: number;
+  TimeoutMs: number;
+  RetryCount: number;
+  IsActive: boolean;
+  CreatedAt: string;
+  UpdatedAt?: string | null;
+}
+
 export interface WsMessage {
   type: string;
   data: unknown;

@@ -379,3 +379,42 @@ GO
 -- unique across every picklist ever run. Stored directly in BoxCode above.
 CREATE SEQUENCE GTP_BoxNumberSeq AS INT START WITH 1 INCREMENT BY 1;
 GO
+
+-- ============================================================
+-- Station Label Printers — direct TCP printing, replacing the browser-tab
+-- print flow when a station has an active printer configured.
+-- Created automatically by printerService on first use.
+-- ============================================================
+
+CREATE TABLE GTP_StationPrinters (
+    PrinterConfigID INT IDENTITY(1,1) PRIMARY KEY,
+    DeviceCode      NVARCHAR(50)  NOT NULL UNIQUE,  -- same free-text station code GTP_AdamDevices uses
+    PrinterName     NVARCHAR(100) NOT NULL,
+    IpAddress       NVARCHAR(45)  NOT NULL,
+    Port            INT           NOT NULL DEFAULT 9100,
+    PrinterType     NVARCHAR(30)  NOT NULL DEFAULT 'Generic',  -- Zebra/TSC/Honeywell/SATO/Godex/Citizen/Brother/Epson/Generic
+    Protocol        NVARCHAR(20)  NOT NULL DEFAULT 'RAW',      -- ZPL/EPL/TSPL/CPCL/ESCPOS/RAW/WindowsDriver
+    DPI             INT           NOT NULL DEFAULT 203,
+    PaperWidthMm    DECIMAL(6,2)  NOT NULL DEFAULT 90,
+    LabelHeightMm   DECIMAL(6,2)  NOT NULL DEFAULT 45,
+    TimeoutMs       INT           NOT NULL DEFAULT 3000,
+    RetryCount      INT           NOT NULL DEFAULT 2,
+    IsActive        BIT           NOT NULL DEFAULT 1,
+    CreatedAt       DATETIME      NOT NULL DEFAULT GETDATE(),
+    UpdatedAt       DATETIME      NULL
+);
+GO
+
+CREATE TABLE GTP_PrintLog (
+    LogID        INT IDENTITY(1,1) PRIMARY KEY,
+    DeviceCode   NVARCHAR(50) NOT NULL,
+    BoxID        INT NULL REFERENCES GTP_PickBoxes(BoxID),
+    LabelType    NVARCHAR(20) NOT NULL,   -- Identification | Contents | Test
+    Status       NVARCHAR(10) NOT NULL,   -- Success | Failed
+    ErrorMessage NVARCHAR(500) NULL,
+    CreatedAt    DATETIME NOT NULL DEFAULT GETDATE(),
+    CompletedAt  DATETIME NULL
+);
+GO
+CREATE INDEX IX_PrintLog_Device ON GTP_PrintLog (DeviceCode, CreatedAt DESC);
+GO
