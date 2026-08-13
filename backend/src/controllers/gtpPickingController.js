@@ -102,4 +102,13 @@ async function resumeSession(req, res, next) {
     } catch (err) { next(err); }
 }
 
-module.exports = { loadPicklist, startSession, getSession, processScan, resumeSession };
+async function setActiveParty(req, res, next) {
+    try {
+        const { cardCode } = req.body;
+        if (!cardCode) return res.status(400).json({ success: false, message: 'cardCode required' });
+        await svc.setActivePartyLight(parseInt(req.params.sessionId), cardCode);
+        res.json({ success: true });
+    } catch (err) { next(err); }
+}
+
+module.exports = { loadPicklist, startSession, getSession, processScan, resumeSession, setActiveParty };

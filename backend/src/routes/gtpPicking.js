@@ -9,6 +9,7 @@ router.get('/picklist/:headerId/resume',                        ctrl.resumeSessi
 router.post('/session/start',                                   ctrl.startSession);
 router.get('/session/:sessionId',                               ctrl.getSession);
 router.post('/session/:sessionId/scan',                         ctrl.processScan);
+router.post('/session/:sessionId/active-party',                 ctrl.setActiveParty);
 
 // Delivery log + retry (one SAP Delivery Note per Party + DocNumber)
 router.get('/session/:sessionId/deliveries',                              delivCtrl.getDeliveries);

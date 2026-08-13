@@ -649,6 +649,28 @@ async function processScan(sessionId, barcode, cardCode, docEntry) {
     };
 }
 
+// ── Manually (re)activate a party's spotlight ────────────────────
+// The physical light otherwise only follows an actual scan (processScan's
+// setActivePartyLight call). The picking-shell UI lets an operator jump straight to a
+// Customer + Sales Order + Ship-To group by clicking its Party Summary card, with no
+// scan involved — without this, the light stays wherever the last *scan* left it and
+// never follows that click. Skips the write entirely if the party is already fully
+// picked, so reviewing a completed party's card never re-lights its (OFF) channel.
+async function setActivePartyLight(sessionId, cardCode) {
+    const pool = await getPool();
+    const partyProgRes = await pool.request()
+        .input('sid', sql.Int,          sessionId)
+        .input('cc',  sql.NVarChar(50), cardCode)
+        .query(`SELECT Status FROM GTP_PickProgress WHERE SessionID=@sid AND CardCode=@cc`);
+    if (!partyProgRes.recordset.length) throw Object.assign(
+        new Error(`Party "${cardCode}" not in this session`), { status: 404 }
+    );
+    const partyDone = partyProgRes.recordset.every(r => r.Status === 'Completed');
+    if (!partyDone) {
+        await lights.setActivePartyLight(sessionId, cardCode);
+    }
+}
+
 // ── Resume an existing session ─────────────────────────────────
 async function resumeSession(headerId) {
     const pool = await getPool();
@@ -662,5 +684,5 @@ async function resumeSession(headerId) {
 
 module.exports = {
     startSession, getSession, processScan, resumeSession, loadPicklistData,
-    ensureSessionReportColumns,
+    ensureSessionReportColumns, setActivePartyLight,
 };

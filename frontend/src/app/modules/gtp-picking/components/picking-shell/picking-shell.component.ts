@@ -245,12 +245,24 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.currentParty = first;
     this.currentOrder = null;
     this.syncCurrentItem();
+    this.activatePartyLight();
     this.view = 'picking-board';
     this.cdr.markForCheck();
     setTimeout(() => {
       this.itemScanInputRef?.nativeElement.focus();
       this.updateSvgPath();
     }, 200);
+  }
+
+  // The physical PTL light otherwise only follows an actual scan — jumping to a group via
+  // the Party Summary panel, "Next Group", or opening the board is UI-only state without
+  // this, so the light would stay wherever the last scan left it. Best-effort: a failure
+  // here (e.g. no ADAM device configured) shouldn't block picking.
+  private activatePartyLight(): void {
+    if (!this.session || !this.currentParty) return;
+    this.api.setActiveParty(this.session.sessionId, this.currentParty.cardCode).subscribe({
+      error: (err) => console.error('[PickingShell] Failed to activate party light', err),
+    });
   }
 
   refreshSession(preferItemCode?: string): void {
@@ -278,6 +290,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.currentParty = party;
     this.currentOrder = order;
     this.currentItem  = order.items.find(i => i.status !== 'Completed') || null;
+    this.activatePartyLight();
     this.cdr.markForCheck();
     setTimeout(() => {
       this.itemScanInputRef?.nativeElement.focus();
@@ -329,6 +342,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
       // .status, which can point at the wrong party's finished group.
       this.currentOrder = next;
       this.syncCurrentItem();
+      this.activatePartyLight();
       this.cdr.markForCheck();
       setTimeout(() => {
         this.itemScanInputRef?.nativeElement.focus();
