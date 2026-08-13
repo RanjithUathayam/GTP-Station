@@ -3,6 +3,7 @@ import {
   ElementRef, ChangeDetectorRef, HostListener,
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { MatDialog } from '@angular/material/dialog';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../../core/services/api.service';
@@ -11,8 +12,9 @@ import { WebsocketService } from '../../../../core/services/websocket.service';
 import { AdamConfigService, AdamDeviceRuntimeStatus } from '../../../../core/services/adam-config.service';
 import {
   PicklistPreview, PicklistSession, PicklistParty, PicklistItem, ScanFeedback,
-  ItemGroupBoxSummary, PartyOrder,
+  ItemGroupBoxSummary, PartyOrder, ItemFilter,
 } from '../../../../core/models/picking.models';
+import { ItemDetailsDialogComponent } from '../item-details-dialog/item-details-dialog.component';
 
 export type PickView = 'scan-picklist' | 'picking-board' | 'completed';
 
@@ -56,8 +58,13 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   session: PicklistSession | null = null;
 
   // ── Step 3 ─────────────────────────────────────────────────
+  // currentOrder is the active Customer + Sales Order + Ship-To group — the primary
+  // picking/navigation/completion unit. currentParty is its parent customer, kept for the
+  // Party Summary panel and for cross-party scan routing.
   currentParty: PicklistParty | null = null;
+  currentOrder: PartyOrder    | null = null;
   currentItem:  PicklistItem  | null = null;
+  activeFilter: ItemFilter = 'all';
 
   scanInput   = '';
   scanLoading = false;
@@ -85,6 +92,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     private cdr:        ChangeDetectorRef,
     private route:      ActivatedRoute,
     private adamConfig: AdamConfigService,
+    private dialog:     MatDialog,
   ) {}
 
   ngOnInit(): void {
@@ -235,6 +243,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   private goToBoard(): void {
     const first = this.session?.parties.find(p => p.status !== 'completed') ?? null;
     this.currentParty = first;
+    this.currentOrder = null;
     this.syncCurrentItem();
     this.view = 'picking-board';
     this.cdr.markForCheck();
@@ -261,6 +270,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
 
   startPickingParty(party: PicklistParty): void {
     this.currentParty = party;
+    this.currentOrder = null;
     this.syncCurrentItem();
     this.view = 'picking-board';
     setTimeout(() => {
@@ -295,11 +305,23 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  nextParty(): void {
+  // Flattens every Customer + Sales Order + Ship-To group across the session, in the natural
+  // Customer→SalesOrder→ShipTo traversal order (parties, then each party's orders by docEntry).
+  allGroups(): PartyOrder[] {
+    return this.session?.parties.flatMap(p => p.orders || []) ?? [];
+  }
+
+  // Advances to the next pending group — same customer's next order first (since orders are
+  // nested under their party in allGroups()), otherwise the next customer's first pending order.
+  nextGroup(): void {
     if (!this.session) return;
-    const pending = this.session.parties.find(p => p.status !== 'completed');
-    if (pending) {
-      this.currentParty = pending;
+    const next = this.allGroups().find(o => o.status !== 'completed');
+    if (next) {
+      this.currentParty = this.session.parties.find(p => p.cardCode === next.cardCode) ?? null;
+      // Assign directly rather than letting syncCurrentItem() re-derive it — it decides
+      // which order to pick based on the OLD currentOrder's (possibly stale/dangling)
+      // .status, which can point at the wrong party's finished group.
+      this.currentOrder = next;
       this.syncCurrentItem();
       this.cdr.markForCheck();
       setTimeout(() => {
@@ -313,15 +335,25 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   }
 
   syncCurrentItem(preferItemCode?: string): void {
-    if (!this.currentParty) return;
+    if (!this.currentParty) { this.currentOrder = null; this.currentItem = null; return; }
+
+    // Stay on the current group while it still has pending items; otherwise move to the
+    // first pending order for this party. Never auto-select an already-completed group.
+    if (!this.currentOrder || this.currentOrder.status === 'completed') {
+      this.currentOrder = this.currentParty.orders?.find(o => o.status !== 'completed') || null;
+    } else {
+      this.currentOrder = this.currentParty.orders?.find(o => o.docEntry === this.currentOrder!.docEntry) || null;
+    }
+    if (!this.currentOrder) { this.currentItem = null; return; }
+
     // Prefer the specified item (e.g. the one just scanned), else first pending
     if (preferItemCode) {
-      const preferred = this.currentParty.items.find(
+      const preferred = this.currentOrder.items.find(
         i => i.itemCode === preferItemCode && i.status !== 'Completed',
       );
       if (preferred) { this.currentItem = preferred; return; }
     }
-    this.currentItem = this.currentParty.items.find(
+    this.currentItem = this.currentOrder.items.find(
       i => i.status !== 'Completed',
     ) || null;
   }
@@ -352,12 +384,11 @@ export class PickingShellComponent implements OnInit, OnDestroy {
 
   // ── Box progress for the current item's order + item group ──
   // Box plans are per (party, Sales Order, item group), so the lookup must
-  // match both the current order (docEntry) and the item group — the same
+  // match both the current group (docEntry) and the item group — the same
   // item group can have an independent box plan on a different order.
   get currentBoxGroup(): ItemGroupBoxSummary | null {
-    if (!this.currentParty || !this.currentItem) return null;
-    const order = this.currentParty.orders?.find(o => o.docEntry === this.currentItem!.docEntry);
-    return order?.boxGroups?.find(
+    if (!this.currentOrder || !this.currentItem) return null;
+    return this.currentOrder.boxGroups?.find(
       g => g.itemGroupName === this.currentItem!.itemGroupName,
     ) || null;
   }
@@ -430,22 +461,23 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     // Extract itemCode from barcode (format: ITEMCODE|ST|ID|GROUP|NUM|QTY)
     const itemCode = raw.split('|')[0];
 
-    // Find the party that owns this item with pending quantity
-    const targetParty = this.findPartyForItem(itemCode);
-    if (!targetParty) {
+    // Find the Customer + Sales Order + Ship-To group that owns this item with pending qty
+    const targetOrder = this.findGroupForItem(itemCode);
+    if (!targetOrder) {
       this.scanInput = '';
       const message = this.itemExistsAnywhere(itemCode)
         ? `Item "${itemCode}" already fully picked`
-        : `Item "${itemCode}" not found in any pending party`;
+        : `Item "${itemCode}" not found in any pending order`;
       this.setScanFeedback('invalid', message);
       setTimeout(() => this.itemScanInputRef?.nativeElement.focus(), 50);
       return;
     }
 
-    // Switch highlight to the correct party before API call
-    if (targetParty.cardCode !== this.currentParty?.cardCode) {
-      this.currentParty = targetParty;
+    // Switch highlight to the correct party/group before the API call
+    if (targetOrder.cardCode !== this.currentParty?.cardCode) {
+      this.currentParty = this.session.parties.find(p => p.cardCode === targetOrder.cardCode) ?? null;
     }
+    this.currentOrder = targetOrder;
     this.syncCurrentItem(itemCode);
     this.cdr.markForCheck();
     setTimeout(() => this.updateSvgPath(), 50);
@@ -453,7 +485,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.scanLoading = true;
     this.setScanFeedback('processing', `Scanning…`);
 
-    this.api.processPickScan(this.session.sessionId, raw, targetParty.cardCode).subscribe({
+    this.api.processPickScan(this.session.sessionId, raw, targetOrder.cardCode, targetOrder.docEntry).subscribe({
       next: (r) => {
         this.scanLoading = false;
         this.scanInput   = '';
@@ -473,10 +505,11 @@ export class PickingShellComponent implements OnInit, OnDestroy {
           return;
         }
 
-        if (data.partyCompleted) {
-          this.setScanFeedback('done', `${targetParty.cardName} — Party completed!`);
+        if (data.groupCompleted) {
+          this.setScanFeedback('done',
+            `${targetOrder.cardName} — Order ${targetOrder.salesOrderNo || targetOrder.docEntry} completed!`);
           this.refreshSession();
-          setTimeout(() => this.nextParty(), 1800);
+          setTimeout(() => this.nextGroup(), 1800);
           return;
         }
 
@@ -492,7 +525,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
         setTimeout(() => { this.scanFlash = false; this.cdr.markForCheck(); }, 700);
 
-        // If item is complete, next item in party; otherwise stay on same item
+        // If item is complete, next item in the group; otherwise stay on same item
         this.refreshSession(data.itemCompleted ? undefined : itemCode);
         setTimeout(() => this.itemScanInputRef?.nativeElement.focus(), 50);
       },
@@ -512,26 +545,25 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     });
   }
 
-  // Find the first party that has this itemCode with remaining quantity
-  private findPartyForItem(itemCode: string): PicklistParty | null {
-    if (!this.session) return null;
-    for (const party of this.session.parties) {
-      const match = party.items.find(
+  // Find the first group (Customer + Sales Order + Ship-To), in Customer→SalesOrder order,
+  // that has this itemCode with remaining quantity — mirrors the backend's per-group lookup.
+  private findGroupForItem(itemCode: string): PartyOrder | null {
+    for (const order of this.allGroups()) {
+      const match = order.items.find(
         i => i.itemCode === itemCode && i.status !== 'Completed'
            && i.pickedQty < i.requiredQty,
       );
-      if (match) return party;
+      if (match) return order;
     }
     return null;
   }
 
   // Used to tell "unknown item" apart from "item exists but already fully
-  // picked" — findPartyForItem() returns null for both cases. Only the exact
+  // picked" — findGroupForItem() returns null for both cases. Only the exact
   // pickedQty === requiredQty match counts as "already picked".
   private itemExistsAnywhere(itemCode: string): boolean {
-    if (!this.session) return false;
-    return this.session.parties.some(party =>
-      party.items.some(i => i.itemCode === itemCode && i.pickedQty === i.requiredQty),
+    return this.allGroups().some(order =>
+      order.items.some(i => i.itemCode === itemCode && i.pickedQty === i.requiredQty),
     );
   }
 
@@ -588,6 +620,11 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     return Math.min(100, Math.round((party.totalPickedQty / party.totalRequiredQty) * 100));
   }
 
+  orderProgress(order: PartyOrder): number {
+    if (!order.totalRequiredQty) return 0;
+    return Math.min(100, Math.round((order.totalPickedQty / order.totalRequiredQty) * 100));
+  }
+
   overallProgress(): number {
     if (!this.session) return 0;
     const total = this.session.parties.reduce((s, p) => s + p.totalRequiredQty, 0);
@@ -604,25 +641,50 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   }
 
   currentItemIndex(): number {
-    if (!this.currentParty || !this.currentItem) return 0;
-    return (this.currentParty.items.findIndex(i => i.itemCode === this.currentItem!.itemCode) + 1);
+    if (!this.currentOrder || !this.currentItem) return 0;
+    return (this.currentOrder.items.findIndex(i => i.itemCode === this.currentItem!.itemCode) + 1);
   }
 
   doneItemCount(party: PicklistParty): number {
     return party.items.filter(i => this.isItemDone(i)).length;
   }
 
-  // Sub-splits a party's items by DocEntry (order) for the full-picklist strip —
-  // items already carry their DocEntry (one row per order line from the WMS join).
-  groupItemsByDocEntry(party: PicklistParty): { docEntry: number; items: PicklistItem[] }[] {
-    const map = new Map<number, PicklistItem[]>();
-    for (const item of party.items) {
-      if (!map.has(item.docEntry)) map.set(item.docEntry, []);
-      map.get(item.docEntry)!.push(item);
+  doneItemCountForOrder(order: PartyOrder): number {
+    return order.items.filter(i => this.isItemDone(i)).length;
+  }
+
+  // ── Group-scoped item nav (current Customer + Sales Order + Ship-To only) ──
+  itemsForFilter(order: PartyOrder | null, filter: ItemFilter): PicklistItem[] {
+    if (!order) return [];
+    if (filter === 'pending')   return order.items.filter(i => i.requiredQty > i.pickedQty || i.status !== 'Completed');
+    if (filter === 'completed') return order.items.filter(i => i.pickedQty >= i.requiredQty || i.status === 'Completed');
+    return order.items;
+  }
+
+  selectFilter(filter: ItemFilter): void {
+    this.activeFilter = filter;
+    if (filter === 'pending' && this.currentOrder) {
+      this.currentItem = this.currentOrder.items.find(i => i.status !== 'Completed') || this.currentItem;
     }
-    return Array.from(map.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([docEntry, items]) => ({ docEntry, items }));
+    this.cdr.markForCheck();
+  }
+
+  // Manual selection from the item nav — unlike auto-advance, this allows picking any item in
+  // the current group, including already-completed ones (per spec: no auto-revisit, but an
+  // explicit click is always allowed).
+  selectItem(item: PicklistItem): void {
+    this.currentItem = item;
+    this.cdr.markForCheck();
+    setTimeout(() => this.updateSvgPath(), 50);
+  }
+
+  openItemDetails(item: PicklistItem | null = this.currentItem): void {
+    if (!item || !this.currentParty || !this.currentOrder) return;
+    this.dialog.open(ItemDetailsDialogComponent, {
+      data: { party: this.currentParty, order: this.currentOrder, item },
+      autoFocus: false,
+      maxWidth: '520px',
+    });
   }
 
   totalItemsCount(): number {
@@ -639,7 +701,9 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.preview       = null;
     this.session       = null;
     this.currentParty  = null;
+    this.currentOrder  = null;
     this.currentItem   = null;
+    this.activeFilter  = 'all';
     this.picklistInput = '';
     this.picklistError = '';
     this.view          = 'scan-picklist';

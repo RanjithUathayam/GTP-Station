@@ -97,8 +97,8 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/picking/session/${sessionId}`);
   }
 
-  processPickScan(sessionId: number, barcode: string, cardCode: string): Observable<{ success: boolean; data: any }> {
-    return this.http.post<any>(`${this.base}/picking/session/${sessionId}/scan`, { barcode, cardCode });
+  processPickScan(sessionId: number, barcode: string, cardCode: string, docEntry: number): Observable<{ success: boolean; data: any }> {
+    return this.http.post<any>(`${this.base}/picking/session/${sessionId}/scan`, { barcode, cardCode, docEntry });
   }
 
   // ─── Box Types + capacity matrix (single source of truth for box capacity) ───

@@ -46,6 +46,8 @@ async function listSessions() {
                  ELSE 'InProgress' END AS PartyPickStatus,
             DE.DocEntry,
             DE.CardName,
+            DL.ShipToCode,
+            DL.SalesOrderNo,
             DL.DeliveryStatus,
             DL.SapDocEntry,
             DL.SapDocNum,
@@ -71,7 +73,7 @@ async function listSessions() {
             WHERE  TD.HeaderId = S.HeaderId
         ) DE
         LEFT JOIN (
-            SELECT SessionID, CardCode, DocEntry,
+            SELECT SessionID, CardCode, DocEntry, ShipToCode, SalesOrderNo,
                    Status       AS DeliveryStatus,
                    SapDocEntry, SapDocNum, ErrorMessage, UpdatedAt,
                    ROW_NUMBER() OVER (
@@ -113,6 +115,8 @@ async function listSessions() {
         if (row.DocEntry != null) {
             party.documents.push({
                 docEntry:          row.DocEntry,
+                shipToCode:        row.ShipToCode   || null,
+                salesOrderNo:      row.SalesOrderNo || null,
                 deliveryStatus:    row.DeliveryStatus || null,
                 sapDocEntry:       row.SapDocEntry    || null,
                 sapDocNum:         row.SapDocNum      || null,

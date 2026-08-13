@@ -52,6 +52,9 @@ $orange:    #ff9800;
                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar-station { font-weight: 600; color: $blue; font-size: 12px; background: $blue-dim;
                   padding: 2px 8px; border-radius: 4px; }
+  .bar-order  { font-weight: 600; color: #4fc3f7; font-size: 12px; background: rgba(#4fc3f7, .12);
+                padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+  .bar-shipto { font-weight: 600; color: $text; font-size: 12px; white-space: nowrap; }
   .bar-spacer { flex: 1; }
   .bar-join-order { font-weight: 600; color: $amber; font-size: 12px; background: $amber-dim;
                      padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
@@ -903,6 +906,7 @@ $orange:    #ff9800;
 
     .ppo-icon    { font-size: 13px; width: 13px; height: 13px; color: $muted; }
     .ppo-doc     { font-family: monospace; font-weight: 600; color: $text; }
+    .ppo-shipto  { font-size: 9px; color: $muted; white-space: nowrap; }
     .ppo-qty     { margin-left: auto; font-family: monospace; }
     .ppo-pending { color: $amber; white-space: nowrap; }
     .ppo-status-label {
@@ -994,6 +998,16 @@ $orange:    #ff9800;
       font-weight: 600;
     }
 
+    .ptc-shipto {
+      font-size: 11px;
+      background: rgba($amber, .1);
+      border: 1px solid rgba($amber, .3);
+      border-radius: 10px;
+      padding: 2px 8px;
+      color: $amber;
+      font-weight: 600;
+    }
+
     .ptc-seq {
       margin-left: auto;
       font-size: 11px;
@@ -1002,6 +1016,16 @@ $orange:    #ff9800;
       border-radius: 10px;
       padding: 2px 8px;
       color: $muted;
+    }
+
+    .ptc-details-btn {
+      font-size: 11px;
+      line-height: 24px;
+      height: 24px;
+      padding: 0 8px;
+      color: $muted;
+      border-color: $border;
+      mat-icon { font-size: 14px; height: 14px; width: 14px; margin-right: 3px; }
     }
   }
 
@@ -1099,66 +1123,6 @@ $orange:    #ff9800;
       font-size: 11px;
       color: $muted;
       strong { color: $text; }
-    }
-  }
-
-  .ptc-scan-parts {
-    margin-bottom: 10px;
-    background: $surface2;
-    border: 1px solid $border;
-    border-radius: 8px;
-    overflow: hidden;
-    text-align: left;
-
-    .psp-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 5px 10px;
-      background: rgba(#4fc3f7, .07);
-      border-bottom: 1px solid $border;
-
-      .psp-title {
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: .6px;
-        color: #4fc3f7;
-        text-transform: uppercase;
-      }
-      .psp-count {
-        font-size: 10px;
-        color: $muted;
-      }
-    }
-
-    .psp-list {
-      max-height: 110px;
-      overflow-y: auto;
-      &::-webkit-scrollbar { width: 3px; }
-      &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
-    }
-
-    .psp-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 10px;
-      font-size: 11px;
-      font-family: monospace;
-      border-bottom: 1px solid rgba($border, .5);
-      &:last-child { border-bottom: none; }
-
-      .psp-num      { color: $muted; min-width: 14px; font-size: 10px; }
-      .psp-uniqueno { flex: 1; color: $text; }
-      .psp-qty      { color: $green; font-weight: 700; }
-    }
-
-    .psp-empty {
-      padding: 8px 10px;
-      font-size: 11px;
-      color: $muted;
-      font-style: italic;
-      text-align: center;
     }
   }
 
@@ -1298,32 +1262,94 @@ $orange:    #ff9800;
   }
 }
 
-// Item checklist strip at bottom
+// Item navigation strip at bottom — scoped to the current Customer + Sales Order + Ship-To group
 .ptl-item-strip {
   display: flex;
+  flex-direction: column;
   gap: 6px;
   padding: 8px 16px;
   border-top: 1px solid $border;
   background: $surface2;
-  overflow-x: auto;
   flex-shrink: 0;
   z-index: 2;
 
-  &::-webkit-scrollbar { height: 3px; }
-  &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+  .pis-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+
+    mat-icon { font-size: 15px; color: $muted; }
+
+    .pis-group-title { font-size: 12px; font-weight: 700; color: $text; }
+    .pis-group-sub   { font-size: 11px; color: $muted; font-family: monospace; }
+  }
+
+  .pis-filters {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .pis-filter-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid $border;
+    background: $surface;
+    color: $muted;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .2s, color .2s;
+
+    &:hover { border-color: rgba(#4fc3f7, .5); }
+
+    &.pis-filter-active {
+      border-color: rgba(#4fc3f7, .6);
+      background: rgba(#4fc3f7, .1);
+      color: #4fc3f7;
+    }
+
+    .pis-filter-count {
+      font-family: monospace;
+      opacity: .7;
+    }
+  }
+
+  .pis-items {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-top: 2px;
+
+    &::-webkit-scrollbar { height: 3px; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+  }
+
+  .pis-empty {
+    padding: 6px 10px;
+    font-size: 11px;
+    color: $muted;
+    font-style: italic;
+  }
 
   .pis-item {
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 4px 10px;
+    padding: 4px 6px 4px 10px;
     border-radius: 20px;
     border: 1px solid $border;
     background: $surface;
     white-space: nowrap;
     font-size: 11px;
     color: $muted;
+    cursor: pointer;
     transition: border-color .2s;
+    flex-shrink: 0;
 
     mat-icon { font-size: 13px; }
 
@@ -1348,54 +1374,16 @@ $orange:    #ff9800;
     }
     .pis-qty  { font-family: monospace; opacity: .7; flex-shrink: 0; }
 
+    .pis-info-btn {
+      width: 22px;
+      height: 22px;
+      line-height: 22px;
+      mat-icon { font-size: 14px; width: 14px; height: 14px; }
+    }
+
     @media (max-width: 600px) {
       .pis-name { max-width: 90px; }
     }
-  }
-
-  .pis-party-sep {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    border: 1px solid $border;
-    background: $surface2;
-    white-space: nowrap;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .4px;
-    color: $muted;
-    flex-shrink: 0;
-    mat-icon { font-size: 12px; }
-
-    &.pis-sep-active {
-      border-color: rgba($amber, .5);
-      background: rgba($amber, .08);
-      color: $amber;
-    }
-    &.pis-sep-done {
-      border-color: rgba($green, .3);
-      background: rgba($green, .06);
-      color: $green;
-      opacity: .7;
-    }
-  }
-
-  .pis-order-sep {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    padding: 2px 8px;
-    border-radius: 20px;
-    border: 1px dashed $border;
-    white-space: nowrap;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: .3px;
-    color: rgba(#4fc3f7, .8);
-    flex-shrink: 0;
-    mat-icon { font-size: 11px; width: 11px; height: 11px; }
   }
 }
 

@@ -63,6 +63,16 @@ async function ensureBoxTables(pool) {
             ALTER TABLE GTP_PickBoxes ADD BoxTypeID INT NULL;
     `);
 
+    // ShipToCode/SalesOrderNo — snapshotted per (CardCode, DocEntry) box plan, same idempotent
+    // pattern as DocEntry/BoxTypeID above.
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_PickBoxes') AND name = 'ShipToCode')
+            ALTER TABLE GTP_PickBoxes ADD ShipToCode NVARCHAR(50) NULL;
+
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_PickBoxes') AND name = 'SalesOrderNo')
+            ALTER TABLE GTP_PickBoxes ADD SalesOrderNo NVARCHAR(50) NULL;
+    `);
+
     // Drop whatever the old 4-column (SessionID, CardCode, ItemGroupName,
     // BoxNumber) unique constraint is actually named — found by its shape, not
     // a hardcoded name, since it was created as 'UQ_PickBoxes' by schema.sql on
@@ -364,7 +374,7 @@ async function deleteBoxTypeCapacity(boxTypeId, itemGroupName) {
 }
 
 // ── Box plan creation (called once per party+order+item-group at session start) ──
-async function createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, itemGroupName, totalQty) {
+async function createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, itemGroupName, totalQty, shipToCode = null, salesOrderNo = null) {
     const pool = await getPool();
     await ensureBoxTables(pool);
 
@@ -390,6 +400,8 @@ async function createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, 
             .input('hid', sql.NVarChar(50),  headerId)
             .input('cc',  sql.NVarChar(50),  cardCode)
             .input('de',  sql.Int,           docEntry)
+            .input('stc', sql.NVarChar(50),  shipToCode)
+            .input('son', sql.NVarChar(50),  salesOrderNo)
             .input('ig',  sql.NVarChar(100), groupName)
             .input('bn',  sql.Int,           n)
             .input('tq',  sql.Decimal(10,2), targetQty)
@@ -397,8 +409,8 @@ async function createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, 
             .input('bc',  sql.NVarChar(150), boxCode)
             .input('bt',  sql.Int,           boxTypeId)
             .query(`INSERT INTO GTP_PickBoxes
-                        (SessionID, HeaderId, CardCode, DocEntry, ItemGroupName, BoxNumber, TargetQty, Status, BoxCode, BoxTypeID)
-                    VALUES (@sid, @hid, @cc, @de, @ig, @bn, @tq, @st, @bc, @bt)`);
+                        (SessionID, HeaderId, CardCode, DocEntry, ShipToCode, SalesOrderNo, ItemGroupName, BoxNumber, TargetQty, Status, BoxCode, BoxTypeID)
+                    VALUES (@sid, @hid, @cc, @de, @stc, @son, @ig, @bn, @tq, @st, @bc, @bt)`);
     }
 }
 

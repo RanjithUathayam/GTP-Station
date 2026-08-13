@@ -10,6 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatRippleModule } from '@angular/material/core';
+import { MatDialogModule } from '@angular/material/dialog';
 
 import { GtpPickingRoutingModule } from './gtp-picking-routing.module';
 import { PickingShellComponent } from './components/picking-shell/picking-shell.component';
@@ -17,11 +18,13 @@ import { DeliveryStatusComponent } from './components/delivery-status/delivery-s
 import { BoxIdLabelComponent } from './components/box-id-label/box-id-label.component';
 import { BoxContentsLabelComponent } from './components/box-contents-label/box-contents-label.component';
 import { BoxLookupComponent } from './components/box-lookup/box-lookup.component';
+import { ItemDetailsDialogComponent } from './components/item-details-dialog/item-details-dialog.component';
 
 @NgModule({
   declarations: [
     PickingShellComponent, DeliveryStatusComponent,
     BoxIdLabelComponent, BoxContentsLabelComponent, BoxLookupComponent,
+    ItemDetailsDialogComponent,
   ],
   imports: [
     CommonModule,
@@ -36,6 +39,7 @@ import { BoxLookupComponent } from './components/box-lookup/box-lookup.component
     MatSelectModule,
     MatTooltipModule,
     MatRippleModule,
+    MatDialogModule,
   ],
 })
 export class GtpPickingModule {}

@@ -39,6 +39,17 @@ async function ensureSessionReportColumns(pool) {
             CREATE INDEX IX_PickProgress_Report ON GTP_PickProgress (SessionID) INCLUDE (Status, PickedQty);
     `);
 
+    // ShipToCode/SalesOrderNo — snapshotted per (CardCode, DocEntry) group so the picking UI,
+    // delivery log, and reports can show the Customer+SalesOrder+Ship-To hierarchy without a
+    // live WMS/SAP join. Same idempotent-ALTER pattern as DocEntry/ItemGroupName above.
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_PickProgress') AND name = 'ShipToCode')
+            ALTER TABLE GTP_PickProgress ADD ShipToCode NVARCHAR(50) NULL;
+
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_PickProgress') AND name = 'SalesOrderNo')
+            ALTER TABLE GTP_PickProgress ADD SalesOrderNo NVARCHAR(50) NULL;
+    `);
+
     _reportColumnsEnsured = true;
 }
 
@@ -85,7 +96,6 @@ async function loadPicklistData(headerId) {
                 T1.u_foldngtyp,
                 T1.u_packngtyp,
                 T1.u_falo,
-                T1.shiptocode,
 				T3.U_SubGrp3 AS ITEMGROUP,
 				T3.U_SubGrp4,
 				T3.U_SubGrp7
@@ -157,8 +167,8 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
     // the customer's combined qty across every order it appears on. Also
     // aggregate per (CardCode, DocEntry, ItemGroupName) totals for the
     // box-management plan below — box plans are per Sales Order, not per customer.
-    const progressTotals = new Map(); // "CardCode|ProductCode|DocEntry" -> { cardCode, itemCode, itemGroupName, docEntry, reqQty }
-    const groupTotals = new Map(); // composite key -> { cardCode, docEntry, itemGroupName, totalQty }
+    const progressTotals = new Map(); // "CardCode|ProductCode|DocEntry" -> { cardCode, itemCode, itemGroupName, docEntry, shipToCode, salesOrderNo, reqQty }
+    const groupTotals = new Map(); // composite key -> { cardCode, docEntry, shipToCode, salesOrderNo, itemGroupName, totalQty }
     for (const r of rows) {
         const itemGroupName = r.ItemGroupName || 'UNSPECIFIED';
 
@@ -169,7 +179,8 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
         } else {
             progressTotals.set(key, {
                 cardCode: r.CardCode, itemCode: r.ProductCode, itemGroupName,
-                docEntry: r.DocEntry, reqQty: Number(r.ReqQty),
+                docEntry: r.DocEntry, shipToCode: r.ShipToCode || null,
+                salesOrderNo: r.SalesOrderNo || null, reqQty: Number(r.ReqQty),
             });
         }
 
@@ -179,11 +190,12 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
             existingGroup.totalQty += Number(r.ReqQty);
         } else {
             groupTotals.set(gKey, {
-                cardCode: r.CardCode, docEntry: r.DocEntry, itemGroupName, totalQty: Number(r.ReqQty),
+                cardCode: r.CardCode, docEntry: r.DocEntry, shipToCode: r.ShipToCode || null,
+                salesOrderNo: r.SalesOrderNo || null, itemGroupName, totalQty: Number(r.ReqQty),
             });
         }
     }
-    for (const { cardCode, itemCode, itemGroupName, docEntry, reqQty } of progressTotals.values()) {
+    for (const { cardCode, itemCode, itemGroupName, docEntry, shipToCode, salesOrderNo, reqQty } of progressTotals.values()) {
         await pool.request()
             .input('sid',  sql.Int,           sessionId)
             .input('hid',  sql.NVarChar(50),  headerId)
@@ -192,14 +204,16 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
             .input('rqty', sql.Decimal(10,2), reqQty)
             .input('ig',   sql.NVarChar(100), itemGroupName)
             .input('de',   sql.Int,           docEntry)
+            .input('stc',  sql.NVarChar(50),  shipToCode)
+            .input('son',  sql.NVarChar(50),  salesOrderNo)
             .query(`INSERT INTO GTP_PickProgress
-                        (SessionID, HeaderId, CardCode, ItemCode, RequiredQty, ItemGroupName, DocEntry)
-                    VALUES (@sid, @hid, @cc, @ic, @rqty, @ig, @de)`);
+                        (SessionID, HeaderId, CardCode, ItemCode, RequiredQty, ItemGroupName, DocEntry, ShipToCode, SalesOrderNo)
+                    VALUES (@sid, @hid, @cc, @ic, @rqty, @ig, @de, @stc, @son)`);
     }
 
     // Build the box plan — one set of boxes per (CardCode, DocEntry, ItemGroupName)
-    for (const { cardCode, docEntry, itemGroupName, totalQty } of groupTotals.values()) {
-        await boxSvc.createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, itemGroupName, totalQty);
+    for (const { cardCode, docEntry, shipToCode, salesOrderNo, itemGroupName, totalQty } of groupTotals.values()) {
+        await boxSvc.createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, itemGroupName, totalQty, shipToCode, salesOrderNo);
     }
 
     // Collect unique parties in seeding order for light-channel assignment
@@ -326,6 +340,8 @@ async function getSession(sessionId) {
             sleeve:       r.ItemSleeve    || '',
             color:        r.ItemColor    || '',
             docEntry:     r.DocEntry,
+            shipToCode:   r.ShipToCode || '',
+            salesOrderNo: r.SalesOrderNo || '',
             orderQty:     Number(r.OrderQty),
             requiredQty:  Number(r.ReqQty),
             pickedQty,
@@ -366,8 +382,14 @@ async function getSession(sessionId) {
                 const oPicked    = [...uniqueOrderPicked.values()].reduce((s, v) => s + v, 0);
                 const oAllDone   = orderItems.every(i => i.status === 'Completed');
                 const oAnyActive = orderItems.some(i => i.status === 'InProgress');
+                // Every item row in this order carries the same ShipToCode/SalesOrderNo (both
+                // are Sales Order header fields keyed by DocEntry) — read off the first one.
                 return {
                     docEntry,
+                    cardCode:         p.cardCode,
+                    cardName:         p.cardName,
+                    shipToCode:       orderItems[0]?.shipToCode    || '',
+                    salesOrderNo:     orderItems[0]?.salesOrderNo  || '',
                     totalRequiredQty: oReq,
                     totalPickedQty:   oPicked,
                     status:           oAllDone ? 'completed' : oAnyActive ? 'active' : 'pending',
@@ -408,7 +430,10 @@ async function getSession(sessionId) {
 }
 
 // ── Process a scan ─────────────────────────────────────────────
-async function processScan(sessionId, barcode, cardCode) {
+// docEntry identifies the active Customer+SalesOrder+Ship-To group the frontend is currently
+// picking against — the scan is validated and attributed to that exact group, not "whichever
+// order for this customer needs it first".
+async function processScan(sessionId, barcode, cardCode, docEntry) {
     const pool = await getPool();
 
     const parsed = parseBarcode(barcode);
@@ -439,17 +464,15 @@ async function processScan(sessionId, barcode, cardCode) {
         );
     }
 
-    // Validate item in picklist for this party — an item split across multiple
-    // Sales Orders now has one row per DocEntry, so pick the earliest order that
-    // still needs it (FIFO); once every order for this item is Completed, fall
-    // back to the first row so the "already completed" error below still fires.
+    // Validate item against the exact active group (Customer + Sales Order + Ship-To) the
+    // frontend says it's picking for — not just "any order for this customer that needs it".
     const progRes = await pool.request()
         .input('sid', sql.Int,          sessionId)
         .input('cc',  sql.NVarChar(50), cardCode)
         .input('ic',  sql.NVarChar(50), parsed.itemCode)
+        .input('de',  sql.Int,          docEntry)
         .query(`SELECT TOP 1 * FROM GTP_PickProgress
-                WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic
-                ORDER BY CASE WHEN Status='Completed' THEN 1 ELSE 0 END, DocEntry ASC`);
+                WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic AND DocEntry=@de`);
     const prog = progRes.recordset[0];
     if (!prog) throw Object.assign(
         new Error(`Item "${parsed.itemCode}" not in picklist for this party`),
@@ -517,7 +540,18 @@ async function processScan(sessionId, barcode, cardCode) {
         nextActivatedBox.autoPrinted = printResult.printed;
     }
 
-    // Check party completion
+    // Check this specific group's completion (Customer + Sales Order + Ship-To, i.e.
+    // CardCode + DocEntry — ShipToCode is implied by DocEntry) — a group finishing never
+    // waits on its sibling orders for the same customer.
+    const groupProgRes = await pool.request()
+        .input('sid', sql.Int,          sessionId)
+        .input('cc',  sql.NVarChar(50), cardCode)
+        .input('de',  sql.Int,          docEntry)
+        .query(`SELECT Status FROM GTP_PickProgress
+                WHERE SessionID=@sid AND CardCode=@cc AND DocEntry=@de`);
+    const groupDone = groupProgRes.recordset.every(r => r.Status === 'Completed');
+
+    // Check party completion (spans every order for this customer) — drives lights only.
     const partyProgRes = await pool.request()
         .input('sid', sql.Int,          sessionId)
         .input('cc',  sql.NVarChar(50), cardCode)
@@ -531,6 +565,14 @@ async function processScan(sessionId, barcode, cardCode) {
         .query(`SELECT Status FROM GTP_PickProgress WHERE SessionID=@sid`);
     const picklistDone = allProgRes.recordset.every(r => r.Status === 'Completed');
 
+    if (groupDone) {
+        // Post this group's SAP delivery the moment it finishes — not deferred until every
+        // sibling order for this customer is also done. One document per (CardCode, DocEntry),
+        // which is already one document per Ship-To since DocEntry implies ShipToCode.
+        delivery.triggerDocumentDelivery(sessionId, cardCode, docEntry, session.HeaderId)
+            .catch(err => console.error('SAP delivery trigger error:', err.message));
+    }
+
     if (picklistDone) {
         await pool.request()
             .input('sid', sql.Int, sessionId)
@@ -541,15 +583,11 @@ async function processScan(sessionId, barcode, cardCode) {
         // All parties done — turn OFF all channels
         lights.resetStationLights(sessionId)
             .catch(err => console.error('[LIGHTS] resetStationLights error:', err.message));
-        delivery.triggerPartyDeliveries(sessionId, cardCode)
-            .catch(err => console.error('SAP delivery trigger error:', err.message));
     } else if (partyDone) {
         ws.broadcast('PARTY_COMPLETED', { sessionId, cardCode });
         // This party is done — turn OFF its channel only
         lights.handlePartyComplete(sessionId, cardCode)
             .catch(err => console.error('[LIGHTS] handlePartyComplete error:', err.message));
-        delivery.triggerPartyDeliveries(sessionId, cardCode)
-            .catch(err => console.error('SAP delivery trigger error:', err.message));
     } else {
         // Spotlight: turn ON only this party's channel, all others OFF
         lights.setActivePartyLight(sessionId, cardCode)
@@ -564,12 +602,14 @@ async function processScan(sessionId, barcode, cardCode) {
         itemCompleted: itemDone,
     });
 
-    // Find next pending item for this party
+    // Find next pending item within THIS group only (same CardCode + DocEntry) — auto-advance
+    // never jumps to a different Sales Order/Ship-To.
     const nextItemRes = await pool.request()
         .input('sid', sql.Int,          sessionId)
         .input('cc',  sql.NVarChar(50), cardCode)
+        .input('de',  sql.Int,          docEntry)
         .query(`SELECT TOP 1 ItemCode FROM GTP_PickProgress
-                WHERE SessionID=@sid AND CardCode=@cc AND Status<>'Completed'
+                WHERE SessionID=@sid AND CardCode=@cc AND DocEntry=@de AND Status<>'Completed'
                 ORDER BY ItemCode`);
     const nextItemCode = nextItemRes.recordset[0]?.ItemCode || null;
 
@@ -579,6 +619,10 @@ async function processScan(sessionId, barcode, cardCode) {
         newPickedQty:     newPicked,
         requiredQty:      prog.RequiredQty,
         itemCompleted:    itemDone,
+        docEntry:         prog.DocEntry,
+        shipToCode:       prog.ShipToCode || null,
+        salesOrderNo:     prog.SalesOrderNo || null,
+        groupCompleted:   groupDone,
         partyCompleted:   partyDone,
         picklistCompleted:picklistDone,
         nextItemCode,

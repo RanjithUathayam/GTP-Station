@@ -26,36 +26,19 @@ async function ensureTable() {
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_DeliveryLog') AND name = 'DocEntry')
             ALTER TABLE GTP_DeliveryLog ADD DocEntry INT NULL;
     `);
+
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_DeliveryLog') AND name = 'ShipToCode')
+            ALTER TABLE GTP_DeliveryLog ADD ShipToCode NVARCHAR(50) NULL;
+
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_DeliveryLog') AND name = 'SalesOrderNo')
+            ALTER TABLE GTP_DeliveryLog ADD SalesOrderNo NVARCHAR(50) NULL;
+    `);
 }
 
 // ── Format today as YYYY-MM-DD ────────────────────────────────
 function today() {
     return new Date().toISOString().slice(0, 10);
-}
-
-// ── The party's distinct real SAP orders (DocEntries) for this picklist ──
-async function getPartyDocEntries(sessionId, cardCode) {
-    const pool = await getPool();
-
-    const sesRes = await pool.request()
-        .input('sid', sql.Int, sessionId)
-        .query('SELECT HeaderId FROM GTP_PicklistSessions WHERE SessionID = @sid');
-    const headerId = sesRes.recordset[0]?.HeaderId;
-    if (!headerId) throw new Error(`Session ${sessionId} not found`);
-
-    const res = await pool.request()
-        .input('hid', sql.NVarChar(50), headerId)
-        .input('cc',  sql.NVarChar(50), cardCode)
-        .query(`
-            SELECT DISTINCT TD.DocEntry
-            FROM   WMS.dbo.Tran_TransDetails TD
-            INNER  JOIN BBLive.dbo.ORDR O
-                    ON O.DocEntry = TD.DocEntry
-                   AND O.CardCode COLLATE DATABASE_DEFAULT = @cc
-            WHERE  TD.HeaderId = @hid
-            ORDER  BY TD.DocEntry
-        `);
-    return { headerId, docEntries: res.recordset.map(r => r.DocEntry) };
 }
 
 // ── Build the SAP delivery payload for one party + one specific order ────
@@ -72,6 +55,8 @@ async function buildDeliveryPayload(sessionId, cardCode, docEntry) {
                 PP.PickedQty            AS Quantity,
                 PP.HeaderId,
                 PP.DocEntry             AS BaseEntry,
+                PP.ShipToCode,
+                PP.SalesOrderNo,
                 ISNULL(R.LineNum,   0)  AS BaseLine,
                 ISNULL(R.Price,     0)  AS UnitPrice,
                 ISNULL(R.DiscPrcnt, 0)  AS DiscountPercent,
@@ -101,8 +86,10 @@ async function buildDeliveryPayload(sessionId, cardCode, docEntry) {
         throw new Error(`No completed items found for party ${cardCode} / order ${docEntry} in session ${sessionId}`);
     }
 
-    const docDate  = today();
-    const headerId = result.recordset[0].HeaderId;
+    const docDate      = today();
+    const headerId     = result.recordset[0].HeaderId;
+    const shipToCode   = result.recordset[0].ShipToCode   || null;
+    const salesOrderNo = result.recordset[0].SalesOrderNo || null;
 
     const documentLines = result.recordset.map(r => ({
         ItemCode:        r.ItemCode,
@@ -116,14 +103,20 @@ async function buildDeliveryPayload(sessionId, cardCode, docEntry) {
         BaseLine:        r.BaseLine,
     }));
 
-    return {
+    const comments = `GTP Station Pick List: ${headerId} | Order: ${docEntry}`
+        + (salesOrderNo ? ` (${salesOrderNo})` : '')
+        + (shipToCode ? ` | Ship-To: ${shipToCode}` : '');
+
+    const payload = {
         CardCode:   cardCode,
         DocDate:    docDate,
         DocDueDate: docDate,
         TaxDate:    docDate,
-        Comments:   `GTP Station Pick List: ${headerId} | Order: ${docEntry}`,
+        Comments:   comments,
         DocumentLines: documentLines,
     };
+
+    return { payload, shipToCode, salesOrderNo };
 }
 
 // ── Trigger SAP delivery for one party + one specific order ──────────────
@@ -142,7 +135,7 @@ async function triggerDocumentDelivery(sessionId, cardCode, docEntry, headerIdHi
             if (!headerId) throw new Error(`Session ${sessionId} not found`);
         }
 
-        const payload = await buildDeliveryPayload(sessionId, cardCode, docEntry);
+        const { payload, shipToCode, salesOrderNo } = await buildDeliveryPayload(sessionId, cardCode, docEntry);
 
         // Insert Pending log
         const logRes = await pool.request()
@@ -150,12 +143,14 @@ async function triggerDocumentDelivery(sessionId, cardCode, docEntry, headerIdHi
             .input('hid', sql.NVarChar(50),  headerId)
             .input('cc',  sql.NVarChar(50),  cardCode)
             .input('de',  sql.Int,           docEntry)
+            .input('stc', sql.NVarChar(50),  shipToCode)
+            .input('son', sql.NVarChar(50),  salesOrderNo)
             .input('pl',  sql.NVarChar(sql.MAX), JSON.stringify(payload))
             .query(`
                 INSERT INTO GTP_DeliveryLog
-                    (SessionID, HeaderId, CardCode, DocEntry, Status, RequestPayload)
+                    (SessionID, HeaderId, CardCode, DocEntry, ShipToCode, SalesOrderNo, Status, RequestPayload)
                 OUTPUT INSERTED.LogID
-                VALUES (@sid, @hid, @cc, @de, 'Pending', @pl)
+                VALUES (@sid, @hid, @cc, @de, @stc, @son, 'Pending', @pl)
             `);
         logId = logRes.recordset[0].LogID;
 
@@ -198,24 +193,6 @@ async function triggerDocumentDelivery(sessionId, cardCode, docEntry, headerIdHi
     }
 }
 
-// ── Trigger SAP delivery for a completed party — one document per order ──
-// (DocEntry), even though they all belong to the same customer.
-async function triggerPartyDeliveries(sessionId, cardCode) {
-    const { headerId, docEntries } = await getPartyDocEntries(sessionId, cardCode);
-    if (!docEntries.length) {
-        console.error(`❌ SAP Delivery skipped — no orders found for party ${cardCode} in session ${sessionId}`);
-        return [];
-    }
-
-    // Sequential, not parallel — posts against the same SAP session/customer
-    // one at a time, which is the safer choice for a live financial system.
-    const results = [];
-    for (const docEntry of docEntries) {
-        results.push(await triggerDocumentDelivery(sessionId, cardCode, docEntry, headerId));
-    }
-    return results;
-}
-
 // ── Get all delivery log records for a session ────────────────
 async function getSessionDeliveries(sessionId) {
     await ensureTable();
@@ -233,6 +210,6 @@ async function getSessionDeliveries(sessionId) {
 }
 
 module.exports = {
-    triggerPartyDeliveries, triggerDocumentDelivery,
+    triggerDocumentDelivery,
     getSessionDeliveries, buildDeliveryPayload,
 };

@@ -12,14 +12,24 @@ export interface PicklistParty {
   orders:           PartyOrder[];
 }
 
+// The primary picking/navigation/completion/delivery unit: one Customer + Sales
+// Order + Ship-To group. ShipToCode is a Sales Order header field (one value per
+// docEntry), so cardCode+docEntry already identifies the group; shipToCode/
+// salesOrderNo are carried here for display and delivery-log traceability.
 export interface PartyOrder {
   docEntry:         number;
+  cardCode:         string;
+  cardName:         string;
+  shipToCode:       string;
+  salesOrderNo:     string;
   totalRequiredQty: number;
   totalPickedQty:   number;
   status:           'pending' | 'active' | 'completed';
   items:            PicklistItem[];
   boxGroups:        ItemGroupBoxSummary[];
 }
+
+export type ItemFilter = 'all' | 'pending' | 'completed';
 
 export interface PickBox {
   boxId:            number;
@@ -123,6 +133,8 @@ export interface PicklistItem {
   sleeve:       string;
   color:        string;
   docEntry:     number;
+  shipToCode:   string;
+  salesOrderNo: string;
   orderQty:     number;
   requiredQty:  number;
   pickedQty:    number;
@@ -169,6 +181,10 @@ export interface PickScanResult {
   newPickedQty:      number;
   requiredQty:       number;
   itemCompleted:     boolean;
+  docEntry:          number;
+  shipToCode:        string | null;
+  salesOrderNo:      string | null;
+  groupCompleted:    boolean;
   partyCompleted:    boolean;
   picklistCompleted: boolean;
   nextItemCode:      string | null;

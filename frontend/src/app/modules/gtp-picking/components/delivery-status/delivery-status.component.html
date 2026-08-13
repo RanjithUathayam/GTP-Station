@@ -142,6 +142,7 @@
         <div class="ppl-documents" *ngIf="p.documents.length">
           <div class="ppd-row" *ngFor="let doc of p.documents">
             <span class="ppd-doc">Order #{{ doc.docEntry }}</span>
+            <span class="ppd-shipto" *ngIf="doc.shipToCode">Ship-To: {{ doc.shipToCode }}</span>
             <span class="ppd-del-badge"
                   [class.del-success]="doc.deliveryStatus === 'Success'"
                   [class.del-failed]="doc.deliveryStatus === 'Failed'"

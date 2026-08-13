@@ -189,6 +189,8 @@ CREATE TABLE GTP_PickProgress (
     Status        NVARCHAR(20)     NOT NULL DEFAULT 'Pending',  -- Pending | InProgress | Completed
     ItemGroupName NVARCHAR(100)    NULL,     -- box-management grouping, snapshotted at seed time
     DocEntry      INT              NULL,     -- Sales Order this item's box plan belongs to, snapshotted at seed time
+    ShipToCode    NVARCHAR(50)     NULL,     -- Ship-To of the Sales Order above, snapshotted at seed time
+    SalesOrderNo  NVARCHAR(50)     NULL,     -- human Sales Order number (DocNum), snapshotted at seed time
     UpdatedAt     DATETIME         NULL,
     CONSTRAINT UQ_PickProgress UNIQUE (SessionID, CardCode, ItemCode, DocEntry)
 );
@@ -251,6 +253,8 @@ CREATE TABLE GTP_DeliveryLog (
     HeaderId       NVARCHAR(50)     NOT NULL,
     CardCode       NVARCHAR(50)     NOT NULL,
     DocEntry       INT              NULL,   -- the specific SAP order (Sales Order DocEntry) this delivery covers; one SAP Delivery Note per (CardCode, DocEntry)
+    ShipToCode     NVARCHAR(50)     NULL,   -- Ship-To of the Sales Order above, snapshotted at post time
+    SalesOrderNo   NVARCHAR(50)     NULL,   -- human Sales Order number (DocNum), snapshotted at post time
     Status         NVARCHAR(20)     NOT NULL DEFAULT 'Pending',
         -- Pending | Success | Failed
     SapDocEntry    INT              NULL,   -- SAP Delivery document entry
@@ -358,6 +362,8 @@ CREATE TABLE GTP_PickBoxes (
     HeaderId               NVARCHAR(50)  NOT NULL,
     CardCode               NVARCHAR(50)  NOT NULL,
     DocEntry               INT           NOT NULL,  -- the Sales Order this box belongs to
+    ShipToCode             NVARCHAR(50)  NULL,       -- Ship-To of the Sales Order above, snapshotted at seed time
+    SalesOrderNo           NVARCHAR(50)  NULL,       -- human Sales Order number (DocNum), snapshotted at seed time
     ItemGroupName          NVARCHAR(100) NOT NULL,
     BoxNumber              INT           NOT NULL,
     TargetQty              DECIMAL(10,2) NOT NULL,   -- this box's capacity (varies by Box Type used)

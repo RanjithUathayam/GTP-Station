@@ -356,6 +356,11 @@ $muted:    rgba(255,255,255,.54);
   font-family: monospace;
 }
 
+.ppd-shipto {
+  font-size: 10px;
+  color: $muted;
+}
+
 .ppd-del-badge {
   display: flex;
   align-items: center;

@@ -1,0 +1,61 @@
+<h2 mat-dialog-title class="idd-title">
+  <mat-icon>info</mat-icon> Item Details
+</h2>
+
+<mat-dialog-content class="idd-content">
+
+  <div class="idd-section">
+    <div class="idd-section-title">Customer</div>
+    <div class="idd-row"><span class="idd-lbl">Card Code</span><span class="idd-val">{{ data.party.cardCode }}</span></div>
+    <div class="idd-row"><span class="idd-lbl">Card Name</span><span class="idd-val">{{ data.party.cardName }}</span></div>
+  </div>
+
+  <div class="idd-section">
+    <div class="idd-section-title">Sales Order</div>
+    <div class="idd-row"><span class="idd-lbl">Sales Order No</span><span class="idd-val">{{ data.order.salesOrderNo || data.order.docEntry }}</span></div>
+    <div class="idd-row"><span class="idd-lbl">Ship-To Code</span><span class="idd-val">{{ data.order.shipToCode || '—' }}</span></div>
+  </div>
+
+  <div class="idd-section">
+    <div class="idd-section-title">Item</div>
+    <div class="idd-row"><span class="idd-lbl">Item Code</span><span class="idd-val">{{ data.item.itemCode }}</span></div>
+    <div class="idd-row"><span class="idd-lbl">Product Name</span><span class="idd-val">{{ data.item.itemName }}</span></div>
+    <div class="idd-row" *ngIf="data.item.color"><span class="idd-lbl">Color</span><span class="idd-val">{{ data.item.color }}</span></div>
+    <div class="idd-row" *ngIf="data.item.size"><span class="idd-lbl">Size</span><span class="idd-val">{{ data.item.size }}</span></div>
+    <div class="idd-row" *ngIf="data.item.sleeve"><span class="idd-lbl">Sleeve</span><span class="idd-val">{{ data.item.sleeve }}</span></div>
+    <div class="idd-row"><span class="idd-lbl">Status</span>
+      <span class="idd-val idd-status" [class.idd-status-done]="data.item.status === 'Completed'">{{ data.item.status }}</span>
+    </div>
+  </div>
+
+  <div class="idd-section">
+    <div class="idd-section-title">Quantities</div>
+    <div class="idd-qty-grid">
+      <div class="idd-qty-cell"><span class="idd-lbl">Order Qty</span><span class="idd-val">{{ data.item.orderQty }}</span></div>
+      <div class="idd-qty-cell"><span class="idd-lbl">Required Qty</span><span class="idd-val">{{ data.item.requiredQty }}</span></div>
+      <div class="idd-qty-cell"><span class="idd-lbl">Picked Qty</span><span class="idd-val idd-picked">{{ data.item.pickedQty }}</span></div>
+      <div class="idd-qty-cell"><span class="idd-lbl">Remaining Qty</span><span class="idd-val idd-remaining">{{ remainingQty }}</span></div>
+    </div>
+  </div>
+
+  <div class="idd-section">
+    <div class="idd-section-title">Scanned Barcodes ({{ data.item.scannedParts.length }})</div>
+    <ng-container *ngIf="data.item.scannedParts.length; else noScans">
+      <div class="idd-scan-list">
+        <div class="idd-scan-row" *ngFor="let part of data.item.scannedParts; let i = index">
+          <span class="idd-scan-num">{{ i + 1 }}.</span>
+          <span class="idd-scan-unique">Uniqueno: {{ part.uniqueNumber }}</span>
+          <span class="idd-scan-qty">Qty: {{ part.qty }}</span>
+        </div>
+      </div>
+    </ng-container>
+    <ng-template #noScans>
+      <div class="idd-scan-empty">No scans yet</div>
+    </ng-template>
+  </div>
+
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button mat-dialog-close>Close</button>
+</mat-dialog-actions>

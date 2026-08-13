@@ -7,6 +7,8 @@ import { ItemGroupBoxSummary } from '../../../../core/models/picking.models';
 
 interface DeliveryDocStatus {
   docEntry: number;
+  shipToCode: string | null;
+  salesOrderNo: string | null;
   deliveryStatus: 'Pending' | 'Success' | 'Failed' | null;
   sapDocEntry: number | null;
   sapDocNum: number | null;

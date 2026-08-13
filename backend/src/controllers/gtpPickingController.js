@@ -11,8 +11,11 @@ async function loadPicklist(req, res, next) {
         const joinOrderRow = rows.find(r => r.JoinOrder != null && String(r.JoinOrder).trim() !== '');
         const joinOrder    = joinOrderRow ? String(joinOrderRow.JoinOrder).trim() : null;
 
-        // Group by party for preview (no session yet)
+        // Group by party for preview (customer rollup, no session yet)
         const partyMap = {};
+        // Group by Customer + Sales Order + Ship-To (Do not split only customer-wise) —
+        // ShipToCode/SalesOrderNo are Sales Order header fields, one value per DocEntry.
+        const groupMap = {};
         for (const r of rows) {
             if (!partyMap[r.CardCode]) {
                 partyMap[r.CardCode] = {
@@ -23,10 +26,22 @@ async function loadPicklist(req, res, next) {
             partyMap[r.CardCode].orderCount.add(r.DocEntry);
             partyMap[r.CardCode].itemCount++;
             partyMap[r.CardCode].totalRequiredQty += Number(r.ReqQty);
+
+            const gKey = `${r.CardCode}|${r.DocEntry}`;
+            if (!groupMap[gKey]) {
+                groupMap[gKey] = {
+                    cardCode: r.CardCode, cardName: r.CardName,
+                    docEntry: r.DocEntry, shipToCode: r.ShipToCode || '', salesOrderNo: r.SalesOrderNo || '',
+                    itemCount: 0, totalRequiredQty: 0,
+                };
+            }
+            groupMap[gKey].itemCount++;
+            groupMap[gKey].totalRequiredQty += Number(r.ReqQty);
         }
         const parties = Object.values(partyMap).map(p => ({
             ...p, orderCount: p.orderCount.size,
         }));
+        const groups = Object.values(groupMap);
 
         // Check for existing active session
         const existing = await svc.resumeSession(headerId);
@@ -38,6 +53,7 @@ async function loadPicklist(req, res, next) {
                 countofOrder,
                 joinOrder,
                 parties,
+                groups,
                 totalParties:      parties.length,
                 totalItems:        rows.length,
                 existingSessionId: existing?.SessionID || null,
@@ -68,10 +84,10 @@ async function getSession(req, res, next) {
 
 async function processScan(req, res, next) {
     try {
-        const { barcode, cardCode } = req.body;
-        if (!barcode || !cardCode)
-            return res.status(400).json({ success: false, message: 'barcode and cardCode required' });
-        const result = await svc.processScan(parseInt(req.params.sessionId), barcode, cardCode);
+        const { barcode, cardCode, docEntry } = req.body;
+        if (!barcode || !cardCode || docEntry == null)
+            return res.status(400).json({ success: false, message: 'barcode, cardCode and docEntry required' });
+        const result = await svc.processScan(parseInt(req.params.sessionId), barcode, cardCode, parseInt(docEntry));
         res.json({ success: true, data: result });
     } catch (err) { next(err); }
 }
