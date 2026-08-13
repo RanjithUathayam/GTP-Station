@@ -213,6 +213,8 @@ CREATE TABLE GTP_ScanLog (
     UniqueNumber NVARCHAR(50)     NULL,
     ScannedQty   DECIMAL(10,2)    NOT NULL DEFAULT 1,
     BoxID        INT              NULL,  -- soft ref to GTP_PickBoxes(BoxID); box this scan was attributed to
+    DocEntry     INT              NULL,  -- Sales Order this scan was credited to; disambiguates when the
+                                          -- same CardCode+ItemCode appears on more than one Sales Order
     ScannedAt    DATETIME         NOT NULL DEFAULT GETDATE()
 );
 GO

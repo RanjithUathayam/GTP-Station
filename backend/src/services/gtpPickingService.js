@@ -296,11 +296,13 @@ async function getSession(sessionId) {
 
     const scanLogRes = await pool.request()
         .input('sid', sql.Int, sessionId)
-        .query(`SELECT CardCode, ItemCode, UniqueNumber, ScannedQty
+        .query(`SELECT CardCode, ItemCode, DocEntry, UniqueNumber, ScannedQty
                 FROM GTP_ScanLog WHERE SessionID=@sid ORDER BY ScanID`);
     const scanPartsMap = {};
     for (const s of scanLogRes.recordset) {
-        const key = `${s.CardCode}|${s.ItemCode}`;
+        // Keyed by DocEntry too — an item split across more than one Sales Order must not
+        // show one order's scanned barcodes under the other order's item-details popup.
+        const key = `${s.CardCode}|${s.ItemCode}|${s.DocEntry}`;
         if (!scanPartsMap[key]) scanPartsMap[key] = [];
         scanPartsMap[key].push({ uniqueNumber: s.UniqueNumber, qty: Number(s.ScannedQty) });
     }
@@ -326,33 +328,47 @@ async function getSession(sessionId) {
                 uBrand:       r.U_Brand       || '',
                 uSalPriceCode:r.U_SalPriceCode || '',
                 docEntries:   new Set(),
-                items:        [],
+                itemsByKey:   new Map(),
             };
         }
         partyMap[r.CardCode].docEntries.add(r.DocEntry);
         const prog      = progMap[`${r.CardCode}|${r.ProductCode}|${r.DocEntry}`] || {};
         const pickedQty = prog.PickedQty != null ? Number(prog.PickedQty) : 0;
-        partyMap[r.CardCode].items.push({
-            itemCode:     r.ProductCode,
-            itemName:     r.ProductName,
-            itemGroupName:r.ItemGroupName || '',
-            size:         r.ItemSize      || '',
-            sleeve:       r.ItemSleeve    || '',
-            color:        r.ItemColor    || '',
-            docEntry:     r.DocEntry,
-            shipToCode:   r.ShipToCode || '',
-            salesOrderNo: r.SalesOrderNo || '',
-            orderQty:     Number(r.OrderQty),
-            requiredQty:  Number(r.ReqQty),
-            pickedQty,
-            uSalPriceCode:r.U_SalPriceCode || '',
-            status:       prog.Status || 'Pending',
-            scannedParts: scanPartsMap[`${r.CardCode}|${r.ProductCode}`] || [],
-        });
+
+        // An item can appear on more than one WMS line within the same Sales Order — merge
+        // those duplicate lines into a single item entry, summing orderQty/requiredQty, the
+        // same way startSession() already aggregates them into one GTP_PickProgress row. If
+        // each raw line kept its own partial requiredQty, it would go stale the moment the
+        // shared (aggregated) pickedQty exceeded that one line's partial qty, wrongly reading
+        // as "already fully picked" long before the item's true total was reached.
+        const itemKey     = `${r.ProductCode}|${r.DocEntry}`;
+        const existingItem = partyMap[r.CardCode].itemsByKey.get(itemKey);
+        if (existingItem) {
+            existingItem.orderQty    += Number(r.OrderQty);
+            existingItem.requiredQty += Number(r.ReqQty);
+        } else {
+            partyMap[r.CardCode].itemsByKey.set(itemKey, {
+                itemCode:     r.ProductCode,
+                itemName:     r.ProductName,
+                itemGroupName:r.ItemGroupName || '',
+                size:         r.ItemSize      || '',
+                sleeve:       r.ItemSleeve    || '',
+                color:        r.ItemColor    || '',
+                docEntry:     r.DocEntry,
+                shipToCode:   r.ShipToCode || '',
+                salesOrderNo: r.SalesOrderNo || '',
+                orderQty:     Number(r.OrderQty),
+                requiredQty:  Number(r.ReqQty),
+                pickedQty,
+                uSalPriceCode:r.U_SalPriceCode || '',
+                status:       prog.Status || 'Pending',
+                scannedParts: scanPartsMap[`${r.CardCode}|${r.ProductCode}|${r.DocEntry}`] || [],
+            });
+        }
     }
 
     const parties = Object.values(partyMap).map(p => {
-        const items       = p.items;
+        const items       = [...p.itemsByKey.values()];
         const totalReq    = items.reduce((s, i) => s + i.requiredQty, 0);
         // PickedQty is stored once per (CardCode, ItemCode, DocEntry) in GTP_PickProgress,
         // but a raw WMS line can still repeat that same triple (two lines for the same
@@ -502,7 +518,8 @@ async function processScan(sessionId, barcode, cardCode, docEntry) {
                 SET PickedQty=@qty, Status=@st, UpdatedAt=GETDATE()
                 WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic AND DocEntry=@de`);
 
-    // Log scan
+    // Log scan — DocEntry pinned to this scan's group so scan history (Show Details' "Scanned
+    // Barcodes" list) never mixes barcodes from a different Sales Order for the same item.
     const scanInsertRes = await pool.request()
         .input('sid',  sql.Int,           sessionId)
         .input('hid',  sql.NVarChar(50),  session.HeaderId)
@@ -513,11 +530,12 @@ async function processScan(sessionId, barcode, cardCode, docEntry) {
         .input('grp',  sql.NVarChar(50),  parsed.itemGroup)
         .input('unum', sql.NVarChar(50),  parsed.uniqueNumber)
         .input('qty',  sql.Decimal(10,2), scanQty)
+        .input('de',   sql.Int,           prog.DocEntry)
         .query(`INSERT INTO GTP_ScanLog
                     (SessionID, HeaderId, CardCode, ItemCode, ScanType,
-                     IDValue, ItemGroup, UniqueNumber, ScannedQty)
+                     IDValue, ItemGroup, UniqueNumber, ScannedQty, DocEntry)
                 OUTPUT INSERTED.ScanID
-                VALUES (@sid, @hid, @cc, @ic, @st, @idv, @grp, @unum, @qty)`);
+                VALUES (@sid, @hid, @cc, @ic, @st, @idv, @grp, @unum, @qty, @de)`);
     const scanId = scanInsertRes.recordset[0].ScanID;
 
     // Route the picked qty into this item's Sales Order + item-group box plan

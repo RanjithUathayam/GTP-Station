@@ -51,6 +51,14 @@ async function ensureBoxTables(pool) {
             ALTER TABLE GTP_ScanLog ADD BoxID INT NULL;
     `);
 
+    // DocEntry — disambiguates scan history when the same CardCode+ItemCode appears on more
+    // than one Sales Order; without it, scannedParts (Show Details popup) leaks scan detail
+    // across orders for the same item/customer.
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('GTP_ScanLog') AND name = 'DocEntry')
+            ALTER TABLE GTP_ScanLog ADD DocEntry INT NULL;
+    `);
+
     // Box plans are now per (Session, CardCode, DocEntry, ItemGroupName) — every
     // Sales Order gets its own "Box 1", so DocEntry must join the unique key.
     await pool.request().query(`
