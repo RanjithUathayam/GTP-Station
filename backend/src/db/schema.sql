@@ -190,7 +190,7 @@ CREATE TABLE GTP_PickProgress (
     ItemGroupName NVARCHAR(100)    NULL,     -- box-management grouping, snapshotted at seed time
     DocEntry      INT              NULL,     -- Sales Order this item's box plan belongs to, snapshotted at seed time
     UpdatedAt     DATETIME         NULL,
-    CONSTRAINT UQ_PickProgress UNIQUE (SessionID, CardCode, ItemCode)
+    CONSTRAINT UQ_PickProgress UNIQUE (SessionID, CardCode, ItemCode, DocEntry)
 );
 GO
 CREATE INDEX IX_PickProgress_Session ON GTP_PickProgress (SessionID, CardCode);

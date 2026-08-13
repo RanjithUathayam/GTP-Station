@@ -98,6 +98,41 @@ async function ensureBoxTables(pool) {
                 UNIQUE (SessionID, CardCode, DocEntry, ItemGroupName, BoxNumber);
     `);
 
+    // GTP_PickProgress used to key one row per (SessionID, CardCode, ItemCode),
+    // aggregating an item's qty across every Sales Order it appeared on for that
+    // customer. That collapsed split orders into one row, so box routing (keyed
+    // by DocEntry) and per-order progress totals attributed picks to the wrong
+    // order. Widen the key to include DocEntry — same pattern as
+    // UQ_PickBoxes_SlotV2 above — so a split item gets one row per order. Safe on
+    // existing data: the old key already guaranteed no duplicates among old rows.
+    const oldProgConRes = await pool.request().query(`
+        SELECT kc.name AS ConstraintName
+        FROM sys.key_constraints kc
+        INNER JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.name = kc.name
+        WHERE kc.parent_object_id = OBJECT_ID('GTP_PickProgress')
+          AND kc.type = 'UQ'
+          AND kc.name <> 'UQ_PickProgress_V2'
+          AND (SELECT COUNT(*) FROM sys.index_columns ic
+               WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id) = 3
+          AND NOT EXISTS (
+              SELECT 1 FROM sys.index_columns ic
+              INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+              WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+                AND c.name = 'DocEntry'
+          )
+    `);
+    const oldProgConstraintName = oldProgConRes.recordset[0]?.ConstraintName;
+    if (oldProgConstraintName) {
+        const bracketed = `[${oldProgConstraintName.replace(/]/g, ']]')}]`;
+        await pool.request().query(`ALTER TABLE GTP_PickProgress DROP CONSTRAINT ${bracketed}`);
+    }
+
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'UQ_PickProgress_V2')
+            ALTER TABLE GTP_PickProgress ADD CONSTRAINT UQ_PickProgress_V2
+                UNIQUE (SessionID, CardCode, ItemCode, DocEntry);
+    `);
+
     // Global, sequential, human-readable Box Number (BX000001, BX000002, ...) —
     // unique across every picklist ever run, not just the current session.
     // Stored directly in BoxCode (already the label/QR identifier column).

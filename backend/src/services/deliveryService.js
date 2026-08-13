@@ -69,9 +69,9 @@ async function buildDeliveryPayload(sessionId, cardCode, docEntry) {
         .query(`
             SELECT
                 PP.ItemCode,
-                ItemQty.ReqQtyForOrder  AS Quantity,
+                PP.PickedQty            AS Quantity,
                 PP.HeaderId,
-                @de                     AS BaseEntry,
+                PP.DocEntry             AS BaseEntry,
                 ISNULL(R.LineNum,   0)  AS BaseLine,
                 ISNULL(R.Price,     0)  AS UnitPrice,
                 ISNULL(R.DiscPrcnt, 0)  AS DiscountPercent,
@@ -79,31 +79,22 @@ async function buildDeliveryPayload(sessionId, cardCode, docEntry) {
                 ISNULL(R.WhsCode, '01') AS WarehouseCode
             FROM GTP_PickProgress PP
             INNER JOIN BBLive.dbo.ORDR O
-                    ON O.DocEntry = @de
+                    ON O.DocEntry = PP.DocEntry
                    AND O.CardCode COLLATE DATABASE_DEFAULT = PP.CardCode
-            -- Quantity to bill on THIS order = that order's own required qty from the
-            -- WMS picklist (loadPicklistData source), summed across any duplicate lines
-            -- for the item within this order. PP.PickedQty/RequiredQty are aggregated
-            -- across every order the item appears on for this customer, so they can't
-            -- be posted as-is without double-billing an item that spans multiple orders.
-            CROSS APPLY (
-                SELECT SUM(ISNULL(TD.ReqQty, 0)) AS ReqQtyForOrder
-                FROM   WMS.dbo.Tran_TransDetails TD
-                WHERE  TD.HeaderId    = PP.HeaderId
-                  AND  TD.DocEntry    = @de
-                  AND  TD.ProductCode COLLATE DATABASE_DEFAULT = PP.ItemCode
-            ) ItemQty
+            -- PP now has one row per (CardCode, ItemCode, DocEntry), so PP.PickedQty
+            -- is already this specific order's own picked qty — no more risk of
+            -- double-billing an item that's split across multiple orders.
             OUTER APPLY (
                 SELECT TOP 1 LineNum, Price, DiscPrcnt, TaxCode, WhsCode
                 FROM   BBLive.dbo.RDR1
-                WHERE  DocEntry = @de
+                WHERE  DocEntry = PP.DocEntry
                   AND  ItemCode COLLATE DATABASE_DEFAULT = PP.ItemCode
                 ORDER  BY LineNum
             ) R
             WHERE PP.SessionID = @sid
               AND PP.CardCode  = @cc
+              AND PP.DocEntry  = @de
               AND PP.Status    = 'Completed'
-              AND ItemQty.ReqQtyForOrder > 0
         `);
 
     if (!result.recordset.length) {

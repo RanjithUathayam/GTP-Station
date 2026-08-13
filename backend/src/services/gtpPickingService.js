@@ -62,10 +62,13 @@ async function loadPicklistData(headerId) {
     const result = await pool.request()
         .input('hid', sql.NVarChar(50), headerId)
         .query(`
-            SELECT T0.headerid                AS HeaderId,
+            SELECT 
+				T0.headerid                  AS HeaderId,
                 T0.docentry                   AS DocEntry,
+				T0.DocNum					  AS SalesOrderNo,
                 T1.cardcode                   AS CardCode,
                 T1.cardname                   AS CardName,
+				T1.ShipToCode				  AS ShipToCode,
                 T1.u_arcode                   AS U_Arcode,
                 T1.u_brand                    AS U_Brand,
                 T0.productcode                AS ProductCode,
@@ -88,6 +91,7 @@ async function loadPicklistData(headerId) {
 				T3.U_SubGrp7
             FROM   (SELECT DISTINCT headerid,
                                     docentry,
+									DocNum,
                                     productcode,
                                     productname,
                                     orderqty,
@@ -144,17 +148,21 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
                 VALUES (@hid, @opid, @stn, @ords)`);
     const sessionId = sesRes.recordset[0].SessionID;
 
-    // Seed GTP_PickProgress — one row per CardCode + ProductCode, with RequiredQty
-    // summed across every WMS order line for that pair (the same item can appear
-    // on more than one line/order for a customer); also aggregate per
-    // (CardCode, DocEntry, ItemGroupName) totals for the box-management
-    // plan below — box plans are per Sales Order, not per customer.
-    const progressTotals = new Map(); // "CardCode|ProductCode" -> { cardCode, itemCode, itemGroupName, docEntry, reqQty }
+    // Seed GTP_PickProgress — one row per (CardCode, ProductCode, DocEntry), with
+    // RequiredQty summed only across duplicate WMS lines *within the same order*
+    // (an item can appear on more than one line of the same Sales Order). A
+    // customer's same item split across two different Sales Orders gets its own
+    // row per order — that's what lets box routing (keyed by DocEntry) and
+    // per-order progress totals credit the right order instead of conflating
+    // the customer's combined qty across every order it appears on. Also
+    // aggregate per (CardCode, DocEntry, ItemGroupName) totals for the
+    // box-management plan below — box plans are per Sales Order, not per customer.
+    const progressTotals = new Map(); // "CardCode|ProductCode|DocEntry" -> { cardCode, itemCode, itemGroupName, docEntry, reqQty }
     const groupTotals = new Map(); // composite key -> { cardCode, docEntry, itemGroupName, totalQty }
     for (const r of rows) {
         const itemGroupName = r.ItemGroupName || 'UNSPECIFIED';
 
-        const key = `${r.CardCode}|${r.ProductCode}`;
+        const key = `${r.CardCode}|${r.ProductCode}|${r.DocEntry}`;
         const existingProgress = progressTotals.get(key);
         if (existingProgress) {
             existingProgress.reqQty += Number(r.ReqQty);
@@ -270,7 +278,7 @@ async function getSession(sessionId) {
         .input('sid', sql.Int, sessionId)
         .query('SELECT * FROM GTP_PickProgress WHERE SessionID=@sid');
     const progMap = {};
-    for (const p of progRes.recordset) progMap[`${p.CardCode}|${p.ItemCode}`] = p;
+    for (const p of progRes.recordset) progMap[`${p.CardCode}|${p.ItemCode}|${p.DocEntry}`] = p;
 
     const scanLogRes = await pool.request()
         .input('sid', sql.Int, sessionId)
@@ -308,7 +316,7 @@ async function getSession(sessionId) {
             };
         }
         partyMap[r.CardCode].docEntries.add(r.DocEntry);
-        const prog      = progMap[`${r.CardCode}|${r.ProductCode}`] || {};
+        const prog      = progMap[`${r.CardCode}|${r.ProductCode}|${r.DocEntry}`] || {};
         const pickedQty = prog.PickedQty != null ? Number(prog.PickedQty) : 0;
         partyMap[r.CardCode].items.push({
             itemCode:     r.ProductCode,
@@ -330,12 +338,12 @@ async function getSession(sessionId) {
     const parties = Object.values(partyMap).map(p => {
         const items       = p.items;
         const totalReq    = items.reduce((s, i) => s + i.requiredQty, 0);
-        // PickedQty is stored once per (CardCode, ItemCode) in GTP_PickProgress, but an
-        // item can appear as multiple order-line rows (one per DocEntry) when the same
-        // item spans several orders for this party — dedupe by itemCode so its picked
-        // qty isn't added once per duplicate order line.
+        // PickedQty is stored once per (CardCode, ItemCode, DocEntry) in GTP_PickProgress,
+        // but a raw WMS line can still repeat that same triple (two lines for the same
+        // item on the same order) — dedupe by itemCode+docEntry so its picked qty isn't
+        // added once per duplicate line.
         const uniquePicked = new Map();
-        items.forEach(i => uniquePicked.set(i.itemCode, i.pickedQty));
+        items.forEach(i => uniquePicked.set(`${i.itemCode}|${i.docEntry}`, i.pickedQty));
         const totalPicked = [...uniquePicked.values()].reduce((s, v) => s + v, 0);
         const allDone     = items.every(i => i.status === 'Completed');
         const anyActive   = items.some(i  => i.status === 'InProgress');
@@ -350,8 +358,12 @@ async function getSession(sessionId) {
         const orders = [...orderMap.entries()]
             .sort((a, b) => a[0] - b[0])
             .map(([docEntry, orderItems]) => {
-                const oReq       = orderItems.reduce((s, i) => s + i.requiredQty, 0);
-                const oPicked    = orderItems.reduce((s, i) => s + Math.min(i.pickedQty, i.requiredQty), 0);
+                const oReq            = orderItems.reduce((s, i) => s + i.requiredQty, 0);
+                // pickedQty is already scoped to this order (per-DocEntry progress row),
+                // so just dedupe duplicate raw lines for the same item within this order.
+                const uniqueOrderPicked = new Map();
+                orderItems.forEach(i => uniqueOrderPicked.set(i.itemCode, i.pickedQty));
+                const oPicked    = [...uniqueOrderPicked.values()].reduce((s, v) => s + v, 0);
                 const oAllDone   = orderItems.every(i => i.status === 'Completed');
                 const oAnyActive = orderItems.some(i => i.status === 'InProgress');
                 return {
@@ -427,13 +439,17 @@ async function processScan(sessionId, barcode, cardCode) {
         );
     }
 
-    // Validate item in picklist for this party
+    // Validate item in picklist for this party — an item split across multiple
+    // Sales Orders now has one row per DocEntry, so pick the earliest order that
+    // still needs it (FIFO); once every order for this item is Completed, fall
+    // back to the first row so the "already completed" error below still fires.
     const progRes = await pool.request()
         .input('sid', sql.Int,          sessionId)
         .input('cc',  sql.NVarChar(50), cardCode)
         .input('ic',  sql.NVarChar(50), parsed.itemCode)
-        .query(`SELECT * FROM GTP_PickProgress
-                WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic`);
+        .query(`SELECT TOP 1 * FROM GTP_PickProgress
+                WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic
+                ORDER BY CASE WHEN Status='Completed' THEN 1 ELSE 0 END, DocEntry ASC`);
     const prog = progRes.recordset[0];
     if (!prog) throw Object.assign(
         new Error(`Item "${parsed.itemCode}" not in picklist for this party`),
@@ -450,16 +466,18 @@ async function processScan(sessionId, barcode, cardCode) {
     const newPicked = prog.PickedQty + scanQty;
     const itemDone  = newPicked >= prog.RequiredQty;
 
-    // Update progress
+    // Update progress — scoped to the specific order's row (DocEntry is now part
+    // of the row's identity), so crediting one order never touches another.
     await pool.request()
         .input('qty',  sql.Decimal(10,2), newPicked)
         .input('st',   sql.NVarChar(20),  itemDone ? 'Completed' : 'InProgress')
         .input('sid',  sql.Int,           sessionId)
         .input('cc',   sql.NVarChar(50),  cardCode)
         .input('ic',   sql.NVarChar(50),  parsed.itemCode)
+        .input('de',   sql.Int,           prog.DocEntry)
         .query(`UPDATE GTP_PickProgress
                 SET PickedQty=@qty, Status=@st, UpdatedAt=GETDATE()
-                WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic`);
+                WHERE SessionID=@sid AND CardCode=@cc AND ItemCode=@ic AND DocEntry=@de`);
 
     // Log scan
     const scanInsertRes = await pool.request()
