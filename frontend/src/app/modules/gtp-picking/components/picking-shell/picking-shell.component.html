@@ -145,45 +145,35 @@
             <mat-icon>people</mat-icon>
             <span>Party Summary</span>
           </div>
-          <div class="ppp-card" *ngFor="let party of session?.parties"
-               [class.ppp-active]="party.cardCode === currentParty?.cardCode"
-               [class.ppp-done]="party.status === 'completed'">
+          <!-- One card per Customer + Sales Order + Ship-To group — same CardCode never
+               merges two groups into one card/one set of totals. -->
+          <div class="ppp-card" *ngFor="let group of allGroups()"
+               [class.ppp-active]="group.docEntry === currentOrder?.docEntry && group.cardCode === currentParty?.cardCode"
+               [class.ppp-done]="group.status === 'completed'"
+               (click)="selectGroup(group)">
             <div class="ppp-status-bar"></div>
-            <div class="ppp-name">{{ party.cardName }}</div>
-            <div class="ppp-code">{{ party.cardCode }}</div>
+            <div class="ppp-name">{{ group.cardName }}</div>
+            <div class="ppp-code">{{ group.cardCode }}</div>
+            <div class="ppp-group-tag">
+              <span class="ppp-so">SO {{ group.salesOrderNo || group.docEntry }}</span>
+              <span class="ppp-shipto" *ngIf="group.shipToCode">{{ group.shipToCode }}</span>
+            </div>
             <div class="ppp-stats">
               <div class="ppp-stat">
                 <span class="pps-lbl">Total Qty</span>
-                <span class="pps-val">{{ party.totalRequiredQty }}</span>
+                <span class="pps-val">{{ group.totalRequiredQty }}</span>
               </div>
               <div class="ppp-stat">
                 <span class="pps-lbl">Picked Qty</span>
-                <span class="pps-val pps-picked">{{ party.totalPickedQty }}</span>
+                <span class="pps-val pps-picked">{{ group.totalPickedQty }}</span>
               </div>
               <div class="ppp-stat">
                 <span class="pps-lbl">Remaining</span>
-                <span class="pps-val pps-remain">{{ party.totalRequiredQty - party.totalPickedQty }}</span>
+                <span class="pps-val pps-remain">{{ orderPending(group) }}</span>
               </div>
             </div>
             <div class="ppp-prog-track">
-              <div class="ppp-prog-fill" [style.width.%]="partyProgress(party)"></div>
-            </div>
-
-            <!-- Per-order (Sales Order + Ship-To group) split — only shown when this customer has more than one order -->
-            <div class="ppp-orders" *ngIf="(party.orders?.length || 0) > 1">
-              <div class="ppo-row" *ngFor="let order of party.orders"
-                   [class.ppo-active]="order.docEntry === currentOrder?.docEntry && party.cardCode === currentParty?.cardCode"
-                   [class.ppo-done]="order.status === 'completed'"
-                   matTooltip="Ship-To: {{ order.shipToCode || '—' }}">
-                <mat-icon class="ppo-icon">
-                  {{ order.status === 'completed' ? 'check_circle' : order.status === 'active' ? 'adjust' : 'radio_button_unchecked' }}
-                </mat-icon>
-                <span class="ppo-doc">SO {{ order.salesOrderNo || order.docEntry }}</span>
-                <span class="ppo-shipto" *ngIf="order.shipToCode">{{ order.shipToCode }}</span>
-                <span class="ppo-qty" matTooltip="Picked / Required">{{ order.totalPickedQty }}/{{ order.totalRequiredQty }}</span>
-                <span class="ppo-pending" *ngIf="orderPending(order) > 0">{{ orderPending(order) }} pending</span>
-                <span class="ppo-status-label">{{ orderStatusLabel(order) }}</span>
-              </div>
+              <div class="ppp-prog-fill" [style.width.%]="orderProgress(group)"></div>
             </div>
           </div>
         </div>

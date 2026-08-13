@@ -827,7 +827,10 @@ $orange:    #ff9800;
   border: 1px solid $border;
   border-radius: 10px;
   overflow: hidden;
+  cursor: pointer;
   transition: border-color .2s, box-shadow .2s;
+
+  &:hover { border-color: rgba(#4fc3f7, .4); }
 
   .ppp-status-bar {
     height: 3px;
@@ -846,7 +849,27 @@ $orange:    #ff9800;
     font-size: 10px;
     color: $muted;
     font-family: monospace;
+    padding: 0 10px 6px;
+  }
+
+  .ppp-group-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
     padding: 0 10px 8px;
+
+    .ppp-so {
+      font-size: 10px;
+      font-weight: 700;
+      color: #4fc3f7;
+      font-family: monospace;
+    }
+    .ppp-shipto {
+      font-size: 9px;
+      color: $amber;
+      white-space: nowrap;
+    }
   }
 
   .ppp-stats {
@@ -888,51 +911,7 @@ $orange:    #ff9800;
     }
   }
 
-  .ppp-orders {
-    display: flex;
-    flex-direction: column;
-    border-top: 1px solid $border;
-  }
-
-  .ppo-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    font-size: 10px;
-    color: $muted;
-    border-bottom: 1px solid rgba($border, .5);
-    &:last-child { border-bottom: none; }
-
-    .ppo-icon    { font-size: 13px; width: 13px; height: 13px; color: $muted; }
-    .ppo-doc     { font-family: monospace; font-weight: 600; color: $text; }
-    .ppo-shipto  { font-size: 9px; color: $muted; white-space: nowrap; }
-    .ppo-qty     { margin-left: auto; font-family: monospace; }
-    .ppo-pending { color: $amber; white-space: nowrap; }
-    .ppo-status-label {
-      white-space: nowrap;
-      text-transform: uppercase;
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: .3px;
-      min-width: 62px;
-      text-align: right;
-    }
-
-    &.ppo-active {
-      color: $amber;
-      .ppo-icon { color: $amber; }
-      .ppo-doc  { color: $amber; }
-      .ppo-status-label { color: $amber; }
-    }
-    &.ppo-done {
-      opacity: .6;
-      .ppo-icon { color: $green; }
-      .ppo-status-label { color: $green; }
-    }
-  }
-
-  // Active party
+  // Active group
   &.ppp-active {
     border-color: $green;
     box-shadow: 0 0 0 1px rgba($green, .2), 0 4px 14px rgba($green, .1);
@@ -940,7 +919,7 @@ $orange:    #ff9800;
     .ppp-name { color: $text; }
   }
 
-  // Completed party
+  // Completed group
   &.ppp-done {
     opacity: .65;
     border-color: rgba($green, .2);

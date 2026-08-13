@@ -268,15 +268,21 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     });
   }
 
-  startPickingParty(party: PicklistParty): void {
+  // Manual selection from the Party Summary panel — each card is one Customer + Sales
+  // Order + Ship-To group. Sets currentOrder directly (not via syncCurrentItem's own
+  // first-pending-order search) so clicking a group always shows exactly that group,
+  // even if it's already completed, rather than jumping to a sibling order.
+  selectGroup(order: PartyOrder): void {
+    const party = this.session?.parties.find(p => p.cardCode === order.cardCode) ?? null;
+    if (!party) return;
     this.currentParty = party;
-    this.currentOrder = null;
-    this.syncCurrentItem();
-    this.view = 'picking-board';
+    this.currentOrder = order;
+    this.currentItem  = order.items.find(i => i.status !== 'Completed') || null;
+    this.cdr.markForCheck();
     setTimeout(() => {
       this.itemScanInputRef?.nativeElement.focus();
       this.updateSvgPath();
-    }, 200);
+    }, 150);
   }
 
   updateSvgPath(): void {
@@ -583,12 +589,6 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     return Math.max(0, order.totalRequiredQty - order.totalPickedQty);
   }
 
-  orderStatusLabel(order: PartyOrder): string {
-    if (order.status === 'completed') return 'Completed';
-    if (order.status === 'active') return 'In Progress';
-    return 'Pending';
-  }
-
   // ── Helpers ────────────────────────────────────────────────
   scanFeedbackIcon(): string {
     switch (this.scanFeedback.state) {
@@ -615,11 +615,6 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     return Math.min(100, Math.round((item.pickedQty / item.requiredQty) * 100));
   }
 
-  partyProgress(party: PicklistParty): number {
-    if (!party.totalRequiredQty) return 0;
-    return Math.min(100, Math.round((party.totalPickedQty / party.totalRequiredQty) * 100));
-  }
-
   orderProgress(order: PartyOrder): number {
     if (!order.totalRequiredQty) return 0;
     return Math.min(100, Math.round((order.totalPickedQty / order.totalRequiredQty) * 100));
@@ -643,10 +638,6 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   currentItemIndex(): number {
     if (!this.currentOrder || !this.currentItem) return 0;
     return (this.currentOrder.items.findIndex(i => i.itemCode === this.currentItem!.itemCode) + 1);
-  }
-
-  doneItemCount(party: PicklistParty): number {
-    return party.items.filter(i => this.isItemDone(i)).length;
   }
 
   doneItemCountForOrder(order: PartyOrder): number {
