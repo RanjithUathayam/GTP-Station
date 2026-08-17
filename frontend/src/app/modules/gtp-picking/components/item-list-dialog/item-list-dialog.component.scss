@@ -1,0 +1,131 @@
+$surface:   #161b22;
+$border:    #30363d;
+$text:      #e6edf3;
+$muted:     #8b949e;
+$green:     #69f0ae;
+$amber:     #ffb300;
+
+:host {
+  display: block;
+  color: $text;
+  background: $surface;
+}
+
+.ild-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 16px;
+  color: $text;
+
+  mat-icon { color: $amber; align-self: center; }
+
+  .ild-sub {
+    font-size: 12px;
+    font-weight: 400;
+    color: $muted;
+    font-family: monospace;
+  }
+}
+
+.ild-content {
+  max-height: 60vh;
+  min-width: 320px;
+}
+
+.ild-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ild-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid $border;
+  background: $surface;
+  color: $muted;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+
+  &:hover { border-color: rgba(#4fc3f7, .5); }
+
+  &.ild-filter-active {
+    border-color: rgba(#4fc3f7, .6);
+    background: rgba(#4fc3f7, .1);
+    color: #4fc3f7;
+  }
+
+  .ild-filter-count {
+    font-family: monospace;
+    opacity: .7;
+  }
+}
+
+.ild-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ild-empty {
+  padding: 10px;
+  font-size: 12px;
+  color: $muted;
+  font-style: italic;
+}
+
+.ild-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 8px;
+  border: 1px solid $border;
+  background: rgba(255,255,255,0.03);
+  font-size: 12px;
+  color: $muted;
+  cursor: pointer;
+  transition: border-color .2s;
+
+  mat-icon { font-size: 15px; flex-shrink: 0; }
+
+  &.ild-done {
+    border-color: rgba($green,.3);
+    background: rgba($green,.06);
+    color: $green;
+    opacity: .8;
+  }
+  &.ild-active {
+    border-color: rgba($amber,.5);
+    background: rgba($amber,.08);
+    color: $amber;
+  }
+
+  .ild-name {
+    flex: 1;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ild-qty {
+    font-family: monospace;
+    opacity: .8;
+    flex-shrink: 0;
+  }
+
+  .ild-info-btn {
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    flex-shrink: 0;
+    mat-icon { font-size: 15px; width: 15px; height: 15px; }
+  }
+}

@@ -12,9 +12,10 @@ import { WebsocketService } from '../../../../core/services/websocket.service';
 import { AdamConfigService, AdamDeviceRuntimeStatus } from '../../../../core/services/adam-config.service';
 import {
   PicklistPreview, PicklistSession, PicklistParty, PicklistItem, ScanFeedback,
-  ItemGroupBoxSummary, PartyOrder, ItemFilter,
+  ItemGroupBoxSummary, PartyOrder,
 } from '../../../../core/models/picking.models';
 import { ItemDetailsDialogComponent } from '../item-details-dialog/item-details-dialog.component';
+import { ItemListDialogComponent } from '../item-list-dialog/item-list-dialog.component';
 
 export type PickView = 'scan-picklist' | 'picking-board' | 'completed';
 
@@ -64,7 +65,6 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   currentParty: PicklistParty | null = null;
   currentOrder: PartyOrder    | null = null;
   currentItem:  PicklistItem  | null = null;
-  activeFilter: ItemFilter = 'all';
 
   scanInput   = '';
   scanLoading = false;
@@ -645,10 +645,6 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     return item.status === 'Completed';
   }
 
-  isItemActive(item: PicklistItem): boolean {
-    return item.itemCode === this.currentItem?.itemCode;
-  }
-
   currentItemIndex(): number {
     if (!this.currentOrder || !this.currentItem) return 0;
     return (this.currentOrder.items.findIndex(i => i.itemCode === this.currentItem!.itemCode) + 1);
@@ -656,22 +652,6 @@ export class PickingShellComponent implements OnInit, OnDestroy {
 
   doneItemCountForOrder(order: PartyOrder): number {
     return order.items.filter(i => this.isItemDone(i)).length;
-  }
-
-  // ── Group-scoped item nav (current Customer + Sales Order + Ship-To only) ──
-  itemsForFilter(order: PartyOrder | null, filter: ItemFilter): PicklistItem[] {
-    if (!order) return [];
-    if (filter === 'pending')   return order.items.filter(i => i.requiredQty > i.pickedQty || i.status !== 'Completed');
-    if (filter === 'completed') return order.items.filter(i => i.pickedQty >= i.requiredQty || i.status === 'Completed');
-    return order.items;
-  }
-
-  selectFilter(filter: ItemFilter): void {
-    this.activeFilter = filter;
-    if (filter === 'pending' && this.currentOrder) {
-      this.currentItem = this.currentOrder.items.find(i => i.status !== 'Completed') || this.currentItem;
-    }
-    this.cdr.markForCheck();
   }
 
   // Manual selection from the item nav — unlike auto-advance, this allows picking any item in
@@ -692,6 +672,19 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     });
   }
 
+  // Item list + filter (All/Pending/Completed) for the current group, shown on demand
+  // instead of a permanently-docked bottom strip.
+  openItemListDialog(): void {
+    if (!this.currentParty || !this.currentOrder) return;
+    this.dialog.open(ItemListDialogComponent, {
+      data: { party: this.currentParty, order: this.currentOrder, currentItem: this.currentItem },
+      autoFocus: false,
+      maxWidth: '480px',
+    }).afterClosed().subscribe((selected: PicklistItem | undefined) => {
+      if (selected) this.selectItem(selected);
+    });
+  }
+
   totalItemsCount(): number {
     return this.session?.parties.reduce((s, p) => s + p.items.length, 0) ?? 0;
   }
@@ -708,7 +701,6 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.currentParty  = null;
     this.currentOrder  = null;
     this.currentItem   = null;
-    this.activeFilter  = 'all';
     this.picklistInput = '';
     this.picklistError = '';
     this.view          = 'scan-picklist';

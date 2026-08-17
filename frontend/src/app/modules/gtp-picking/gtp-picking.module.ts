@@ -19,12 +19,13 @@ import { BoxIdLabelComponent } from './components/box-id-label/box-id-label.comp
 import { BoxContentsLabelComponent } from './components/box-contents-label/box-contents-label.component';
 import { BoxLookupComponent } from './components/box-lookup/box-lookup.component';
 import { ItemDetailsDialogComponent } from './components/item-details-dialog/item-details-dialog.component';
+import { ItemListDialogComponent } from './components/item-list-dialog/item-list-dialog.component';
 
 @NgModule({
   declarations: [
     PickingShellComponent, DeliveryStatusComponent,
     BoxIdLabelComponent, BoxContentsLabelComponent, BoxLookupComponent,
-    ItemDetailsDialogComponent,
+    ItemDetailsDialogComponent, ItemListDialogComponent,
   ],
   imports: [
     CommonModule,
