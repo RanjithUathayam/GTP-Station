@@ -84,8 +84,8 @@ async function loadPicklistData(headerId) {
                 T1.u_brand                    AS U_Brand,
                 T0.productcode                AS ProductCode,
                 T0.productname                AS ProductName,
-                Isnull(T0.orderqty, 0)     AS OrderQty,
-                Isnull(T0.reqqty, 0)       AS ReqQty,
+                Isnull(T0.ConfQty, 0)     AS OrderQty,
+                Isnull(T0.ConfQty, 0)       AS ReqQty,
                 T2.u_salpricecode             AS U_SalPriceCode,
                 D.countoforder                AS CountofOrder,
                 T4.itmsgrpnam              AS ItemGroupName,
@@ -106,7 +106,8 @@ async function loadPicklistData(headerId) {
                                     productname,
                                     orderqty,
                                     reqqty,
-                                    [lineno]
+                                    [lineno],
+                                    ConfQty
                     FROM   wms.dbo.tran_transdetails
                     WHERE  headerid = @hid) AS T0
                 INNER JOIN bblive.dbo.ordr AS T1
