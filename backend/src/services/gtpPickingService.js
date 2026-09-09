@@ -109,7 +109,7 @@ async function loadPicklistData(headerId) {
                                     [lineno],
                                     ConfQty
                     FROM   wms.dbo.tran_transdetails
-                    WHERE  headerid = @hid) AS T0
+                    WHERE  headerid = @hid AND ConfQty > 0) AS T0
                 INNER JOIN bblive.dbo.ordr AS T1
                         ON T0.docentry = T1.docentry
                 INNER JOIN (SELECT cardcode,
@@ -119,7 +119,7 @@ async function loadPicklistData(headerId) {
                         ON T2.cardcode = T1.cardcode
                 CROSS JOIN (SELECT Count(DISTINCT TD.docentry) AS CountofOrder
                             FROM   wms.dbo.tran_transdetails TD
-                            WHERE  TD.headerid = @hid) AS D
+                            WHERE  TD.headerid = @hid AND ConfQty > 0) AS D
                 LEFT JOIN bblive.dbo.oitm AS T3
                         ON T3.itemcode = T0.productcode COLLATE database_default
                 LEFT JOIN bblive.dbo.oitb AS T4
