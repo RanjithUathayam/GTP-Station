@@ -43,8 +43,10 @@ async function loadPicklist(req, res, next) {
         }));
         const groups = Object.values(groupMap);
 
-        // Check for existing active session
+        // Check for existing active session; Picklist Recheck also needs the latest
+        // finished one, since a completed picklist has no InProgress session to resume.
         const existing = await svc.resumeSession(headerId);
+        const latest   = await svc.findLatestSession(headerId);
 
         res.json({
             success: true,
@@ -57,6 +59,8 @@ async function loadPicklist(req, res, next) {
                 totalParties:      parties.length,
                 totalItems:        rows.length,
                 existingSessionId: existing?.SessionID || null,
+                latestSessionId:     latest?.SessionID || null,
+                latestSessionStatus: latest?.Status    || null,
             },
         });
     } catch (err) { next(err); }

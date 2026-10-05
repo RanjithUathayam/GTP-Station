@@ -1337,6 +1337,125 @@ $orange:    #ff9800;
   }
 }
 
+// ─── Picklist Recheck ───────────────────────────────────────────
+// Pick / Recheck mode switch on the scan-picklist card
+.mode-switch {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: -12px 0 20px;
+
+  .mode-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid $border;
+    background: $surface2;
+    color: $muted;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .2s, color .2s, background .2s;
+
+    mat-icon { font-size: 16px; width: 16px; height: 16px; color: inherit; }
+
+    &:hover:not(:disabled) { border-color: rgba($blue, .5); }
+    &:disabled { opacity: .5; cursor: default; }
+
+    &.mode-active {
+      border-color: rgba($green, .6);
+      background: $green-dim;
+      color: $green;
+    }
+    &.mode-recheck.mode-active {
+      border-color: rgba($amber, .6);
+      background: $amber-dim;
+      color: $amber;
+    }
+  }
+}
+
+.pick-bar .bar-recheck-btn {
+  font-size: 12px;
+  height: 28px;
+  line-height: 28px;
+  padding: 0 10px;
+  color: $amber;
+  border-color: rgba($amber, .5);
+  mat-icon { font-size: 16px; width: 16px; height: 16px; margin-right: 4px; }
+}
+
+.ppp-card .ppp-group-tag .ppp-del {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.06);
+  color: $muted;
+
+  &.ppp-del-hold   { background: $amber-dim; color: $amber; }
+  &.ppp-del-posted { background: $green-dim; color: $green; }
+  &.ppp-del-failed { background: $red-dim;   color: $red;   }
+}
+
+.ptl-top-card.ptc-done {
+  .ptc-done-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .recheck-group-btn {
+    height: 40px;
+    color: $amber;
+    border-color: rgba($amber, .5);
+    border-radius: 8px;
+    mat-icon { margin-right: 4px; }
+  }
+}
+
+.completed-card {
+  .cc-hold {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    border: 1px solid rgba($amber, .4);
+    background: $amber-dim;
+    color: $amber;
+    font-size: 13px;
+    text-align: left;
+
+    mat-icon { font-size: 20px; width: 20px; height: 20px; color: $amber; flex-shrink: 0; }
+  }
+
+  .cc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 12px;
+
+    button {
+      height: 44px;
+      border-radius: 8px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      mat-icon { font-size: 20px; width: 20px; height: 20px; }
+    }
+  }
+
+  .cc-recheck-btn { color: $amber; border-color: rgba($amber, .5); }
+  .cc-release-btn { background: $green; color: #000; }
+}
+
 // ─── Angular Material overrides ─────────────────────────────────
 ::ng-deep {
   .pick-shell,

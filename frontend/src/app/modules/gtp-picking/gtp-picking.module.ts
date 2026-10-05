@@ -20,12 +20,13 @@ import { BoxContentsLabelComponent } from './components/box-contents-label/box-c
 import { BoxLookupComponent } from './components/box-lookup/box-lookup.component';
 import { ItemDetailsDialogComponent } from './components/item-details-dialog/item-details-dialog.component';
 import { ItemListDialogComponent } from './components/item-list-dialog/item-list-dialog.component';
+import { RecheckDialogComponent } from './components/recheck-dialog/recheck-dialog.component';
 
 @NgModule({
   declarations: [
     PickingShellComponent, DeliveryStatusComponent,
     BoxIdLabelComponent, BoxContentsLabelComponent, BoxLookupComponent,
-    ItemDetailsDialogComponent, ItemListDialogComponent,
+    ItemDetailsDialogComponent, ItemListDialogComponent, RecheckDialogComponent,
   ],
   imports: [
     CommonModule,

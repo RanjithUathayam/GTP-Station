@@ -27,6 +27,46 @@ export interface PartyOrder {
   status:           'pending' | 'active' | 'completed';
   items:            PicklistItem[];
   boxGroups:        ItemGroupBoxSummary[];
+  // Latest SAP delivery state for this group (null = never handed to SAP yet)
+  deliveryStatus:   DeliveryLogStatus | null;
+  sapDocNum:        number | null;
+  deliveryError:    string | null;
+}
+
+// GTP_DeliveryLog.Status — OnHold = picked, waiting to be released to SAP (recheck window);
+// Cancelled = superseded by a Picklist Recheck reset of the group.
+export type DeliveryLogStatus = 'OnHold' | 'Released' | 'Pending' | 'Success' | 'Failed' | 'Cancelled';
+
+export interface RecheckResetResult {
+  recheckId:       number;
+  cardCode:        string;
+  docEntry:        number;
+  itemCode:        string | null;
+  resetQty:        number;
+  resetScans:      number;
+  sessionReopened: boolean;
+  session:         PicklistSession;
+}
+
+export interface RecheckHistoryEntry {
+  recheckId:    number;
+  cardCode:     string;
+  docEntry:     number;
+  salesOrderNo: string | null;
+  itemCode:     string | null;   // null = whole group reset
+  resetQty:     number;
+  resetScans:   number;
+  reason:       string | null;
+  operatorId:   number | null;
+  createdAt:    string;
+}
+
+export interface DeliveryReleaseResult {
+  cardCode:   string;
+  docEntry:   number;
+  success:    boolean;
+  sapDocNum?: number;
+  error?:     string;
 }
 
 export type ItemFilter = 'all' | 'pending' | 'completed';
@@ -151,6 +191,9 @@ export interface PicklistPreview {
   totalParties:      number;
   totalItems:        number;
   existingSessionId: number | null;
+  // Most recent InProgress-or-Completed session — what Picklist Recheck opens
+  latestSessionId:     number | null;
+  latestSessionStatus: 'InProgress' | 'Completed' | null;
 }
 
 export interface PicklistPartyPreview {
@@ -173,6 +216,8 @@ export interface PicklistSession {
   totalParties:      number;
   completedParties:  number;
   autoPrintedBoxIds?: number[];
+  // true = completed groups' SAP deliveries wait OnHold until released (recheck window)
+  deliveryHold:      boolean;
 }
 
 export interface PickScanResult {

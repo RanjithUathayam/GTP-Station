@@ -172,6 +172,7 @@ $muted:    rgba(255,255,255,.54);
 
   &.del-ok   { background: rgba($green,.12); color: $green; }
   &.del-fail { background: rgba($red,.12);   color: $red;   }
+  &.del-hold { background: rgba($amber,.12); color: $amber; }
 }
 
 .plsch-stats {
@@ -221,9 +222,12 @@ $muted:    rgba(255,255,255,.54);
   &.rotated { transform: rotate(180deg); }
 }
 
-// ── Collapsed quick action ────────────────────────────────
+// ── Session quick actions ─────────────────────────────────
 .pls-card-quick {
   padding: 0 16px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 // ── Party list (expanded) ─────────────────────────────────
@@ -375,6 +379,7 @@ $muted:    rgba(255,255,255,.54);
   &.del-success { background: rgba($green,.15); color: $green; }
   &.del-failed  { background: rgba($red,.15);   color: $red;   }
   &.del-pending { background: rgba($amber,.15); color: $amber; }
+  &.del-hold    { background: rgba($amber,.15); color: $amber; }
   &.del-none    { background: rgba(255,255,255,.06); color: $muted; }
 }
 
@@ -399,6 +404,18 @@ $muted:    rgba(255,255,255,.54);
   line-height: 32px !important;
   padding: 0 12px !important;
   border-color: $amber !important;
+  color: $amber !important;
+
+  mat-icon { font-size: 16px; margin-right: 4px; vertical-align: middle; }
+  &:hover { background: rgba($amber,.08) !important; }
+}
+
+.btn-recheck {
+  font-size: 12px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  padding: 0 12px !important;
+  border-color: rgba($amber,.5) !important;
   color: $amber !important;
 
   mat-icon { font-size: 16px; margin-right: 4px; vertical-align: middle; }

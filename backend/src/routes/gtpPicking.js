@@ -3,6 +3,7 @@ const ctrl        = require('../controllers/gtpPickingController');
 const delivCtrl   = require('../controllers/deliveryController');
 const statusCtrl  = require('../controllers/picklistStatusController');
 const boxCtrl     = require('../controllers/boxController');
+const recheckCtrl = require('../controllers/recheckController');
 
 router.get('/picklist/:headerId',                               ctrl.loadPicklist);
 router.get('/picklist/:headerId/resume',                        ctrl.resumeSession);
@@ -13,7 +14,12 @@ router.post('/session/:sessionId/active-party',                 ctrl.setActivePa
 
 // Delivery log + retry (one SAP Delivery Note per Party + DocNumber)
 router.get('/session/:sessionId/deliveries',                              delivCtrl.getDeliveries);
+router.post('/session/:sessionId/deliveries/release',                     delivCtrl.releaseAll);
 router.post('/session/:sessionId/deliveries/:cardCode/:docEntry/retry',   delivCtrl.retryDelivery);
+
+// Picklist Recheck — reset a group (or one item) and re-pick it
+router.post('/session/:sessionId/recheck/reset',                          recheckCtrl.resetForRepick);
+router.get('/session/:sessionId/recheck/history',                         recheckCtrl.getHistory);
 
 // Delivery Status overview (formerly "Pick Status")
 router.get('/sessions',                                         statusCtrl.getSessions);

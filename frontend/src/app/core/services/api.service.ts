@@ -8,7 +8,7 @@ import {
 } from '../models';
 import {
   BoxIdLabelData, BoxContentsLabelData, ItemGroupBoxSummary, PickBox, BoxType, BoxTypeMatrixRow,
-  NextActivatedBoxRef,
+  NextActivatedBoxRef, RecheckResetResult, RecheckHistoryEntry, DeliveryReleaseResult,
 } from '../models/picking.models';
 
 @Injectable({ providedIn: 'root' })
@@ -103,6 +103,26 @@ export class ApiService {
 
   setActiveParty(sessionId: number, cardCode: string, docEntry?: number): Observable<{ success: boolean }> {
     return this.http.post<any>(`${this.base}/picking/session/${sessionId}/active-party`, { cardCode, docEntry });
+  }
+
+  // ─── Picklist Recheck (reset & re-pick) ───────────────────
+  /** Resets a Customer + Sales Order group — or one item in it when itemCode is given — for re-picking. */
+  resetForRepick(
+    sessionId: number,
+    body: { cardCode: string; docEntry: number; itemCode?: string | null; reason?: string | null; operatorId?: number },
+  ): Observable<{ success: boolean; data: RecheckResetResult }> {
+    return this.http.post<any>(`${this.base}/picking/session/${sessionId}/recheck/reset`, body);
+  }
+
+  getRecheckHistory(sessionId: number): Observable<{ success: boolean; data: RecheckHistoryEntry[] }> {
+    return this.http.get<any>(`${this.base}/picking/session/${sessionId}/recheck/history`);
+  }
+
+  /** Releases every OnHold group delivery in the session to SAP. */
+  releaseSessionDeliveries(sessionId: number): Observable<{
+    success: boolean; data: { results: DeliveryReleaseResult[]; released: number; failed: number };
+  }> {
+    return this.http.post<any>(`${this.base}/picking/session/${sessionId}/deliveries/release`, {});
   }
 
   // ─── Box Types + capacity matrix (single source of truth for box capacity) ───

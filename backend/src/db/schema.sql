@@ -260,7 +260,9 @@ CREATE TABLE GTP_DeliveryLog (
     ShipToCode     NVARCHAR(50)     NULL,   -- Ship-To of the Sales Order above, snapshotted at post time
     SalesOrderNo   NVARCHAR(50)     NULL,   -- human Sales Order number (DocNum), snapshotted at post time
     Status         NVARCHAR(20)     NOT NULL DEFAULT 'Pending',
-        -- Pending | Success | Failed
+        -- OnHold | Released | Pending | Success | Failed | Cancelled
+        -- OnHold: group picked, waiting to be released to SAP (DELIVERY_HOLD_FOR_RECHECK, default on)
+        -- Cancelled: superseded by a Picklist Recheck reset of the group
     SapDocEntry    INT              NULL,   -- SAP Delivery document entry
     SapDocNum      INT              NULL,   -- SAP Delivery document number
     ErrorMessage   NVARCHAR(MAX)    NULL,
@@ -270,6 +272,53 @@ CREATE TABLE GTP_DeliveryLog (
 );
 GO
 CREATE INDEX IX_DeliveryLog_Session ON GTP_DeliveryLog (SessionID, CardCode, DocEntry);
+GO
+
+-- ============================================================
+-- Picklist Recheck (reset & re-pick) audit
+-- Created automatically by recheckService on first use.
+-- ============================================================
+
+-- One row per reset of a Customer + Sales Order group (ItemCode NULL) or one item in it.
+CREATE TABLE GTP_RecheckLog (
+    RecheckID    INT IDENTITY(1,1) PRIMARY KEY,
+    SessionID    INT            NOT NULL,
+    HeaderId     NVARCHAR(50)   NOT NULL,
+    CardCode     NVARCHAR(50)   NOT NULL,
+    DocEntry     INT            NOT NULL,
+    SalesOrderNo NVARCHAR(50)   NULL,
+    ItemCode     NVARCHAR(50)   NULL,     -- NULL = the whole group was reset
+    ResetQty     DECIMAL(10,2)  NOT NULL DEFAULT 0,
+    ResetScans   INT            NOT NULL DEFAULT 0,
+    Reason       NVARCHAR(255)  NULL,
+    OperatorID   INT            NULL,
+    CreatedAt    DATETIME       NOT NULL DEFAULT GETDATE()
+);
+GO
+CREATE INDEX IX_RecheckLog_Session ON GTP_RecheckLog (SessionID, CardCode, DocEntry);
+GO
+
+-- GTP_ScanLog rows removed by a reset (so the same barcodes can be re-scanned), kept for audit.
+CREATE TABLE GTP_RecheckScanArchive (
+    ArchiveID    INT IDENTITY(1,1) PRIMARY KEY,
+    RecheckID    INT            NOT NULL,
+    ScanID       INT            NOT NULL,   -- original GTP_ScanLog.ScanID
+    SessionID    INT            NOT NULL,
+    HeaderId     NVARCHAR(50)   NOT NULL,
+    CardCode     NVARCHAR(50)   NOT NULL,
+    ItemCode     NVARCHAR(50)   NOT NULL,
+    ScanType     NVARCHAR(10)   NULL,
+    IDValue      NVARCHAR(100)  NULL,
+    ItemGroup    NVARCHAR(50)   NULL,
+    UniqueNumber NVARCHAR(50)   NULL,
+    ScannedQty   DECIMAL(10,2)  NOT NULL,
+    BoxID        INT            NULL,
+    DocEntry     INT            NULL,
+    ScannedAt    DATETIME       NOT NULL,
+    ArchivedAt   DATETIME       NOT NULL DEFAULT GETDATE()
+);
+GO
+CREATE INDEX IX_RecheckScanArchive_Recheck ON GTP_RecheckScanArchive (RecheckID);
 GO
 
 -- ============================================================

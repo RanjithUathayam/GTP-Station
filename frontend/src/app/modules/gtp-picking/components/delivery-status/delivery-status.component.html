@@ -68,6 +68,9 @@
           <span *ngIf="sessionDeliveryState(s) === 'some-failed'" class="plsch-del-chip del-fail">
             <mat-icon>cancel</mat-icon>Delivery Failed
           </span>
+          <span *ngIf="onHoldCount(s) > 0" class="plsch-del-chip del-hold">
+            <mat-icon>pause_circle</mat-icon>{{ onHoldCount(s) }} On Hold
+          </span>
         </div>
 
         <div class="plsch-stats">
@@ -97,10 +100,21 @@
         </div>
       </div>
 
-      <!-- Collapsed quick-action -->
-      <div *ngIf="!s.expanded && s.sessionStatus === 'InProgress'" class="pls-card-quick">
-        <button mat-stroked-button class="btn-continue" (click)="continuePicking(s, $event)">
+      <!-- Session actions: continue / recheck (reset & re-pick) / release held deliveries -->
+      <div *ngIf="s.sessionStatus === 'InProgress' || s.sessionStatus === 'Completed'" class="pls-card-quick">
+        <button *ngIf="!s.expanded && s.sessionStatus === 'InProgress'"
+                mat-stroked-button class="btn-continue" (click)="continuePicking(s, $event)">
           <mat-icon>play_arrow</mat-icon>Continue Picking
+        </button>
+        <button mat-stroked-button class="btn-recheck" (click)="recheck(s, $event)"
+                matTooltip="Reset an order or an item and pick it again">
+          <mat-icon>restart_alt</mat-icon>Recheck
+        </button>
+        <button *ngIf="onHoldCount(s) > 0" mat-stroked-button class="btn-post"
+                [disabled]="isReleasing(s)" (click)="releaseAll(s, $event)">
+          <mat-spinner *ngIf="isReleasing(s)" diameter="14"></mat-spinner>
+          <mat-icon *ngIf="!isReleasing(s)">send</mat-icon>
+          {{ isReleasing(s) ? 'Releasing…' : 'Release All to SAP (' + onHoldCount(s) + ')' }}
         </button>
       </div>
 
@@ -146,8 +160,9 @@
             <span class="ppd-del-badge"
                   [class.del-success]="doc.deliveryStatus === 'Success'"
                   [class.del-failed]="doc.deliveryStatus === 'Failed'"
-                  [class.del-pending]="doc.deliveryStatus === 'Pending'"
-                  [class.del-none]="!doc.deliveryStatus">
+                  [class.del-pending]="doc.deliveryStatus === 'Pending' || doc.deliveryStatus === 'Released'"
+                  [class.del-hold]="doc.deliveryStatus === 'OnHold'"
+                  [class.del-none]="!doc.deliveryStatus || doc.deliveryStatus === 'Cancelled'">
               <mat-icon>{{ deliveryIcon(doc.deliveryStatus) }}</mat-icon>
               {{ deliveryLabel(doc.deliveryStatus) }}
             </span>
@@ -163,7 +178,7 @@
                     (click)="postDelivery(s, p, doc, $event)">
               <mat-spinner *ngIf="isRetrying(s.sessionId, p.cardCode, doc.docEntry)" diameter="14"></mat-spinner>
               <mat-icon *ngIf="!isRetrying(s.sessionId, p.cardCode, doc.docEntry)">send</mat-icon>
-              {{ isRetrying(s.sessionId, p.cardCode, doc.docEntry) ? 'Posting…' : 'Post Delivery' }}
+              {{ isRetrying(s.sessionId, p.cardCode, doc.docEntry) ? 'Posting…' : postButtonLabel(doc) }}
             </button>
           </div>
         </div>

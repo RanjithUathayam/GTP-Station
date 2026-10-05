@@ -16,8 +16,20 @@
           <div class="ring-pulse"></div>
           <mat-icon>barcode_reader</mat-icon>
         </div>
-        <h2 class="scan-heading">Scan Picklist Barcode</h2>
-        <p class="scan-sub">Scan or enter the picklist number to load order details</p>
+        <h2 class="scan-heading">{{ recheckMode ? 'Recheck Picklist' : 'Scan Picklist Barcode' }}</h2>
+        <p class="scan-sub" *ngIf="!recheckMode">Scan or enter the picklist number to load order details</p>
+        <p class="scan-sub" *ngIf="recheckMode">Scan a picked picklist to reset an order or an item and pick it again</p>
+
+        <div class="mode-switch">
+          <button class="mode-chip" [class.mode-active]="!recheckMode" (click)="setRecheckMode(false)"
+                  [disabled]="picklistLoading">
+            <mat-icon>shopping_basket</mat-icon> Pick
+          </button>
+          <button class="mode-chip mode-recheck" [class.mode-active]="recheckMode" (click)="setRecheckMode(true)"
+                  [disabled]="picklistLoading">
+            <mat-icon>restart_alt</mat-icon> Recheck
+          </button>
+        </div>
 
         <div class="input-group">
           <mat-form-field appearance="outline" class="pick-field station-field">
@@ -70,8 +82,11 @@
                   [disabled]="!picklistInput || picklistLoading || !stationReady"
                   (click)="loadPicklist()">
             <mat-progress-spinner *ngIf="picklistLoading" diameter="20" mode="indeterminate"></mat-progress-spinner>
-            <ng-container *ngIf="!picklistLoading">
+            <ng-container *ngIf="!picklistLoading && !recheckMode">
               <mat-icon>search</mat-icon> Load Picklist
+            </ng-container>
+            <ng-container *ngIf="!picklistLoading && recheckMode">
+              <mat-icon>restart_alt</mat-icon> Open for Recheck
             </ng-container>
           </button>
         </div>
@@ -108,6 +123,10 @@
         {{ currentOrder?.shipToCode }}
       </span>
       <span class="bar-spacer"></span>
+      <button mat-stroked-button class="bar-recheck-btn" *ngIf="currentOrder"
+              (click)="openRecheckDialog()" matTooltip="Reset this order or an item and pick it again">
+        <mat-icon>restart_alt</mat-icon> Recheck
+      </button>
       <span class="bar-join-order" *ngIf="session?.joinOrder as joinOrder" matTooltip="Join Order">
         Join Order: <strong>{{ joinOrder }}</strong>
       </span>
@@ -157,6 +176,10 @@
             <div class="ppp-group-tag">
               <span class="ppp-so">SO {{ group.salesOrderNo || group.docEntry }}</span>
               <span class="ppp-shipto" *ngIf="group.shipToCode">{{ group.shipToCode }}</span>
+              <span class="ppp-del" *ngIf="deliveryTag(group) as tag"
+                    [class.ppp-del-hold]="group.deliveryStatus === 'OnHold'"
+                    [class.ppp-del-posted]="group.deliveryStatus === 'Success'"
+                    [class.ppp-del-failed]="group.deliveryStatus === 'Failed'">{{ tag }}</span>
             </div>
             <div class="ppp-stats">
               <div class="ppp-stat">
@@ -250,9 +273,14 @@
               <div class="ptl-top-card ptc-done">
                 <mat-icon class="ptc-done-icon">check_circle</mat-icon>
                 <div class="ptc-done-msg">All items picked for <strong>{{ currentParty?.cardName }}</strong></div>
-                <button mat-raised-button class="next-party-btn" (click)="nextGroup()">
-                  <mat-icon>arrow_forward</mat-icon> Next Group
-                </button>
+                <div class="ptc-done-actions">
+                  <button mat-stroked-button class="recheck-group-btn" (click)="openRecheckDialog()" *ngIf="currentOrder">
+                    <mat-icon>restart_alt</mat-icon> Recheck
+                  </button>
+                  <button mat-raised-button class="next-party-btn" (click)="nextGroup()">
+                    <mat-icon>arrow_forward</mat-icon> Next Group
+                  </button>
+                </div>
               </div>
             </ng-template>
           </div>
@@ -362,6 +390,25 @@
             <span class="cp-name">{{ p.cardName }}</span>
             <span class="cp-qty">{{ p.totalPickedQty | number:'1.0-0' }} / {{ p.totalRequiredQty | number:'1.0-0' }}</span>
           </div>
+        </div>
+
+        <!-- SAP delivery hold — completed orders wait here for a recheck window -->
+        <div class="cc-hold" *ngIf="session?.deliveryHold && onHoldCount() > 0">
+          <mat-icon>pause_circle</mat-icon>
+          <span><strong>{{ onHoldCount() }}</strong> {{ onHoldCount() === 1 ? 'order is' : 'orders are' }} on hold.
+            Recheck if needed, then release to SAP.</span>
+        </div>
+
+        <div class="cc-actions">
+          <button mat-stroked-button class="cc-recheck-btn" (click)="recheckFromCompleted()">
+            <mat-icon>restart_alt</mat-icon> Recheck Picklist
+          </button>
+          <button mat-raised-button class="cc-release-btn"
+                  *ngIf="session?.deliveryHold && onHoldCount() > 0"
+                  [disabled]="releasing" (click)="releaseDeliveries()">
+            <mat-progress-spinner *ngIf="releasing" diameter="18" mode="indeterminate"></mat-progress-spinner>
+            <ng-container *ngIf="!releasing"><mat-icon>send</mat-icon> Release to SAP</ng-container>
+          </button>
         </div>
 
         <button mat-raised-button class="start-over-btn" (click)="startOver()">

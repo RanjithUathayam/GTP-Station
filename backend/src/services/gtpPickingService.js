@@ -321,6 +321,13 @@ async function getSession(sessionId) {
         boxGroupsByPartyOrder[key].push(g);
     }
 
+    // Latest SAP delivery state per group — tells the picking board / recheck dialog whether
+    // a group is on hold (releasable, resettable) or already posted (locked).
+    const deliveryByGroup = {};
+    for (const d of await delivery.getLatestDeliveriesBySession(sessionId)) {
+        deliveryByGroup[`${d.CardCode}|${d.DocEntry}`] = d;
+    }
+
     // Group by CardCode (party), DocEntries tracked for orderCount
     const partyMap = {};
     for (const r of rawRows) {
@@ -404,6 +411,7 @@ async function getSession(sessionId) {
                 const oAnyActive = orderItems.some(i => i.status === 'InProgress');
                 // Every item row in this order carries the same ShipToCode/SalesOrderNo (both
                 // are Sales Order header fields keyed by DocEntry) — read off the first one.
+                const deliv = deliveryByGroup[`${p.cardCode}|${docEntry}`];
                 return {
                     docEntry,
                     cardCode:         p.cardCode,
@@ -415,6 +423,9 @@ async function getSession(sessionId) {
                     status:           oAllDone ? 'completed' : oAnyActive ? 'active' : 'pending',
                     items:            orderItems,
                     boxGroups:        boxGroupsByPartyOrder[`${p.cardCode}|${docEntry}`] || [],
+                    deliveryStatus:   deliv?.Status    || null,
+                    sapDocNum:        deliv?.SapDocNum || null,
+                    deliveryError:    deliv?.Status === 'Failed' ? (deliv.ErrorMessage || null) : null,
                 };
             });
 
@@ -446,6 +457,7 @@ async function getSession(sessionId) {
         parties,
         totalParties:    parties.length,
         completedParties,
+        deliveryHold:    delivery.isHoldEnabled(),
     };
 }
 
@@ -588,10 +600,11 @@ async function processScan(sessionId, barcode, cardCode, docEntry) {
     const picklistDone = allProgRes.recordset.every(r => r.Status === 'Completed');
 
     if (groupDone) {
-        // Post this group's SAP delivery the moment it finishes — not deferred until every
+        // Hand this group's SAP delivery off the moment it finishes — not deferred until every
         // sibling order for this customer is also done. One document per (CardCode, DocEntry),
-        // which is already one document per Ship-To since DocEntry implies ShipToCode.
-        delivery.triggerDocumentDelivery(sessionId, cardCode, docEntry, session.HeaderId)
+        // which is already one document per Ship-To since DocEntry implies ShipToCode. With the
+        // recheck hold enabled it's parked OnHold until released (see deliveryService).
+        delivery.onGroupCompleted(sessionId, cardCode, docEntry, session.HeaderId)
             .catch(err => console.error('SAP delivery trigger error:', err.message));
     }
 
@@ -695,7 +708,19 @@ async function resumeSession(headerId) {
     return res.recordset[0] || null;
 }
 
+// ── Most recent live-or-finished session for a picklist ────────────────
+// What Picklist Recheck opens: unlike resumeSession, a Completed session counts too.
+async function findLatestSession(headerId) {
+    const pool = await getPool();
+    const res = await pool.request()
+        .input('hid', sql.NVarChar(50), headerId)
+        .query(`SELECT TOP 1 SessionID, Status FROM GTP_PicklistSessions
+                WHERE HeaderId=@hid AND Status IN ('InProgress','Completed')
+                ORDER BY StartedAt DESC, SessionID DESC`);
+    return res.recordset[0] || null;
+}
+
 module.exports = {
-    startSession, getSession, processScan, resumeSession, loadPicklistData,
+    startSession, getSession, processScan, resumeSession, findLatestSession, loadPicklistData,
     ensureSessionReportColumns, setActivePartyLight,
 };

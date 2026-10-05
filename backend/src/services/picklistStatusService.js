@@ -77,7 +77,7 @@ async function listSessions() {
                    Status       AS DeliveryStatus,
                    SapDocEntry, SapDocNum, ErrorMessage, UpdatedAt,
                    ROW_NUMBER() OVER (
-                       PARTITION BY SessionID, CardCode, DocEntry ORDER BY CreatedAt DESC
+                       PARTITION BY SessionID, CardCode, DocEntry ORDER BY CreatedAt DESC, LogID DESC
                    ) AS rn
             FROM   GTP_DeliveryLog
         ) DL ON DL.SessionID = S.SessionID AND DL.CardCode = PP.CardCode

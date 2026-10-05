@@ -1,0 +1,91 @@
+<h2 mat-dialog-title class="rcd-title">
+  <mat-icon>restart_alt</mat-icon> Picklist Recheck
+  <span class="rcd-sub">{{ data.party.cardName }} · SO {{ data.order.salesOrderNo || data.order.docEntry }}<ng-container *ngIf="data.order.shipToCode"> · {{ data.order.shipToCode }}</ng-container></span>
+</h2>
+
+<mat-dialog-content class="rcd-content">
+
+  <div class="rcd-delivery"
+       [class.rcd-del-locked]="locked"
+       [class.rcd-del-hold]="data.order.deliveryStatus === 'OnHold'"
+       [class.rcd-del-failed]="data.order.deliveryStatus === 'Failed'">
+    <mat-icon>{{ locked ? 'lock' : data.order.deliveryStatus === 'OnHold' ? 'pause_circle' : 'local_shipping' }}</mat-icon>
+    <span>{{ deliveryLabel() }}</span>
+  </div>
+
+  <div class="rcd-banner rcd-banner-locked" *ngIf="locked">
+    This order is already posted to SAP and can't be re-picked here. Cancel the Delivery Note in SAP first.
+  </div>
+  <div class="rcd-banner" *ngIf="inFlight">
+    This order is being posted to SAP right now. Wait for it to finish, then reopen Recheck.
+  </div>
+
+  <div class="rcd-error" *ngIf="error">
+    <mat-icon>error_outline</mat-icon> {{ error }}
+  </div>
+
+  <!-- Inline confirmation step — a reset is destructive, so it never fires on one click -->
+  <div class="rcd-confirm" *ngIf="pending">
+    <div class="rcd-confirm-msg">
+      Reset <strong>{{ pending.label }}</strong>?
+      <span class="rcd-confirm-qty">{{ pending.qty }} picked pcs go back to 0.</span>
+    </div>
+    <div class="rcd-confirm-hint">
+      Take these pieces out of their boxes, then scan them again.
+    </div>
+    <div class="rcd-confirm-actions">
+      <button mat-button (click)="cancelPending()" [disabled]="busy">Cancel</button>
+      <button mat-raised-button class="rcd-confirm-btn" (click)="confirmReset()" [disabled]="busy">
+        <mat-progress-spinner *ngIf="busy" diameter="16" mode="indeterminate"></mat-progress-spinner>
+        <ng-container *ngIf="!busy"><mat-icon>restart_alt</mat-icon> Confirm Reset</ng-container>
+      </button>
+    </div>
+  </div>
+
+  <mat-form-field appearance="outline" class="rcd-reason" *ngIf="!locked">
+    <mat-label>Reason (optional)</mat-label>
+    <input matInput [(ngModel)]="reason" maxlength="255" autocomplete="off"
+           placeholder="e.g. wrong size packed, count mismatch" [disabled]="busy">
+  </mat-form-field>
+
+  <div class="rcd-list">
+    <div class="rcd-item" *ngFor="let item of data.order.items"
+         [class.rcd-done]="item.status === 'Completed'"
+         [class.rcd-target]="pending?.item?.itemCode === item.itemCode">
+      <mat-icon>{{ item.status === 'Completed' ? 'check_circle' : item.pickedQty > 0 ? 'timelapse' : 'radio_button_unchecked' }}</mat-icon>
+      <span class="rcd-name" [matTooltip]="itemDisplayLabel(item)">{{ itemDisplayLabel(item) }}</span>
+      <span class="rcd-qty">{{ item.pickedQty }}/{{ item.requiredQty }}</span>
+      <button mat-stroked-button class="rcd-item-btn"
+              [disabled]="!canReset || item.pickedQty <= 0 || !!pending"
+              (click)="askResetItem(item)">
+        Reset
+      </button>
+    </div>
+  </div>
+
+  <div class="rcd-history" *ngIf="history.length">
+    <button class="rcd-history-toggle" (click)="showHistory = !showHistory">
+      <mat-icon>{{ showHistory ? 'expand_less' : 'history' }}</mat-icon>
+      Previous resets ({{ history.length }})
+    </button>
+    <div class="rcd-history-list" *ngIf="showHistory">
+      <div class="rcd-history-row" *ngFor="let h of history">
+        <span class="rcd-h-when">{{ h.createdAt | date:'dd MMM HH:mm' }}</span>
+        <span class="rcd-h-what">{{ historyLabel(h) }}</span>
+        <span class="rcd-h-qty">−{{ h.resetQty }}</span>
+        <span class="rcd-h-reason" *ngIf="h.reason" [matTooltip]="h.reason">{{ h.reason }}</span>
+      </div>
+    </div>
+  </div>
+
+</mat-dialog-content>
+
+<mat-dialog-actions align="end" class="rcd-actions">
+  <button mat-stroked-button class="rcd-group-btn"
+          [disabled]="!canReset || groupPickedQty <= 0 || !!pending"
+          (click)="askResetGroup()">
+    <mat-icon>restart_alt</mat-icon> Reset Whole Order
+  </button>
+  <span class="rcd-spacer"></span>
+  <button mat-button mat-dialog-close [disabled]="busy">Close</button>
+</mat-dialog-actions>

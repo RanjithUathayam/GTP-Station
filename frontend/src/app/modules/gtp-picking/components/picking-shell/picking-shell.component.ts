@@ -12,10 +12,11 @@ import { WebsocketService } from '../../../../core/services/websocket.service';
 import { AdamConfigService, AdamDeviceRuntimeStatus } from '../../../../core/services/adam-config.service';
 import {
   PicklistPreview, PicklistSession, PicklistParty, PicklistItem, ScanFeedback,
-  ItemGroupBoxSummary, PartyOrder,
+  ItemGroupBoxSummary, PartyOrder, RecheckResetResult,
 } from '../../../../core/models/picking.models';
 import { ItemDetailsDialogComponent } from '../item-details-dialog/item-details-dialog.component';
 import { ItemListDialogComponent } from '../item-list-dialog/item-list-dialog.component';
+import { RecheckDialogComponent, RecheckDialogData } from '../recheck-dialog/recheck-dialog.component';
 
 export type PickView = 'scan-picklist' | 'picking-board' | 'completed';
 
@@ -73,6 +74,14 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   // ── Box progress (for the current item's item group) ───────
   boxCompleting = false;
 
+  // ── Picklist Recheck (reset & re-pick) ─────────────────────
+  // recheckMode: the picklist scan opens the latest session (even a Completed one) and the
+  // Recheck dialog, instead of starting/resuming picking.
+  recheckMode = false;
+  releasing   = false;
+  // Our own reset's WS echo is skipped — applyRecheckResult() already applied it.
+  private lastRecheckId: number | null = null;
+
   // A hardware barcode scanner is a keyboard-wedge device — the browser can't tell its
   // keystrokes apart from a human's except by speed. Rather than gate every keystroke
   // (which risks dropping characters if a scanner is briefly slower than expected), we
@@ -101,7 +110,11 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     // Auto-load headerId from query param (e.g. navigated from status page)
     const qHeaderId  = this.route.snapshot.queryParamMap.get('headerId');
     const qSessionId = this.route.snapshot.queryParamMap.get('sessionId');
-    if (qSessionId) {
+    const qRecheck   = this.route.snapshot.queryParamMap.get('recheck') === '1';
+    if (qSessionId && qRecheck) {
+      this.recheckMode = true;
+      this.openForRecheck(Number(qSessionId));
+    } else if (qSessionId) {
       this.picklistLoading = true;
       this.resumeSession(Number(qSessionId));
     } else if (qHeaderId) {
@@ -116,6 +129,26 @@ export class PickingShellComponent implements OnInit, OnDestroy {
       if (this.session?.sessionId === msg.data?.sessionId) {
         this.view = 'completed';
         this.cdr.markForCheck();
+      }
+    });
+    // A reset from another screen (e.g. Delivery Status → Recheck) reopens this session.
+    this.ws.on('PICKLIST_RECHECK').pipe(takeUntil(this.destroy$)).subscribe((msg: any) => {
+      if (this.session?.sessionId !== msg.data?.sessionId || msg.data?.recheckId === this.lastRecheckId) return;
+      if (this.view === 'completed') {
+        this.api.getPicklistSession(this.session!.sessionId).subscribe((r) => {
+          this.session = r.data;
+          this.goToBoard();
+        });
+      } else {
+        this.refreshSession();
+      }
+    });
+
+    // The scan input steals focus back on blur (see onScanInputBlur) except while a dialog is
+    // open — so hand it back once the last dialog closes.
+    this.dialog.afterAllClosed.pipe(takeUntil(this.destroy$)).subscribe(() => {
+      if (this.view === 'picking-board') {
+        setTimeout(() => this.itemScanInputRef?.nativeElement.focus(), 50);
       }
     });
   }
@@ -192,6 +225,15 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.api.loadPicklist(raw).subscribe({
       next: (r) => {
         this.preview = r.data;
+        if (this.recheckMode) {
+          if (r.data.latestSessionId) {
+            this.openForRecheck(r.data.latestSessionId);
+          } else {
+            this.picklistLoading = false;
+            this.picklistError   = `Picklist ${raw} hasn't been picked yet — nothing to recheck`;
+          }
+          return;
+        }
         if (r.data.existingSessionId) {
           this.resumeSession(r.data.existingSessionId);
         } else {
@@ -240,11 +282,43 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     });
   }
 
+  setRecheckMode(on: boolean): void {
+    this.recheckMode   = on;
+    this.picklistError = '';
+    setTimeout(() => this.picklistInputRef?.nativeElement.focus(), 50);
+  }
+
+  // Opens a session (InProgress or Completed) on the board with the Recheck dialog up
+  // for its current group.
+  openForRecheck(sessionId: number): void {
+    this.picklistLoading = true;
+    this.api.getPicklistSession(sessionId).subscribe({
+      next: (r) => {
+        this.picklistLoading = false;
+        this.session         = r.data;
+        this.goToBoard();
+        this.openRecheckDialog();
+      },
+      error: (err) => {
+        this.picklistLoading = false;
+        this.picklistError   = err.error?.message || 'Failed to open picklist for recheck';
+      },
+    });
+  }
+
   private goToBoard(): void {
     const first = this.session?.parties.find(p => p.status !== 'completed') ?? null;
     this.currentParty = first;
     this.currentOrder = null;
     this.syncCurrentItem();
+    // Everything already picked (only reachable via Recheck) — show the first group
+    // rather than an empty board, so there's something to recheck.
+    if (!first && this.session) {
+      const firstGroup = this.allGroups()[0] ?? null;
+      this.currentParty = this.session.parties.find(p => p.cardCode === firstGroup?.cardCode) ?? null;
+      this.currentOrder = firstGroup;
+      this.currentItem  = null;
+    }
     this.activatePartyLight();
     this.view = 'picking-board';
     this.cdr.markForCheck();
@@ -406,9 +480,10 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     event.preventDefault();
   }
 
-  // Keep the scan input permanently focused so the scanner can fire at any time.
+  // Keep the scan input permanently focused so the scanner can fire at any time — except
+  // while a dialog is open, or its inputs (e.g. the recheck reason) could never be typed in.
   onScanInputBlur(): void {
-    if (this.view === 'picking-board') {
+    if (this.view === 'picking-board' && !this.dialog.openDialogs.length) {
       setTimeout(() => this.itemScanInputRef?.nativeElement.focus(), 0);
     }
   }
@@ -696,6 +771,86 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     });
   }
 
+  // ════════════════════════════════════════════════════════════
+  // Picklist Recheck — reset & re-pick
+  // ════════════════════════════════════════════════════════════
+  openRecheckDialog(order: PartyOrder | null = this.currentOrder): void {
+    if (!this.session || !order) return;
+    const party = this.session.parties.find(p => p.cardCode === order.cardCode);
+    if (!party) return;
+    const data: RecheckDialogData = { sessionId: this.session.sessionId, party, order };
+    this.dialog.open(RecheckDialogComponent, {
+      data, autoFocus: false, maxWidth: '560px', width: '92vw',
+    }).afterClosed().subscribe((result: RecheckResetResult | undefined) => {
+      if (result) this.applyRecheckResult(result);
+    });
+  }
+
+  // Recheck from the Completed screen — back onto the board (first group selected).
+  recheckFromCompleted(): void {
+    this.goToBoard();
+    this.openRecheckDialog();
+  }
+
+  // Lands the operator on the group that was just reset, on the reset item (or the group's
+  // first item), ready to scan — the backend has already lit this group's light.
+  private applyRecheckResult(result: RecheckResetResult): void {
+    this.lastRecheckId = result.recheckId;
+    this.session       = result.session;
+    const party = this.session.parties.find(p => p.cardCode === result.cardCode) ?? null;
+    const order = party?.orders.find(o => o.docEntry === result.docEntry) ?? null;
+    this.currentParty = party;
+    this.currentOrder = order;
+    this.currentItem  = (result.itemCode && order?.items.find(i => i.itemCode === result.itemCode))
+      || order?.items.find(i => i.status !== 'Completed')
+      || null;
+    this.view = 'picking-board';
+    this.setScanFeedback('success',
+      `Reset ${result.resetQty} pcs of ${result.itemCode ?? `SO ${order?.salesOrderNo || result.docEntry}`} — scan again to re-pick`);
+    this.cdr.markForCheck();
+    setTimeout(() => {
+      this.itemScanInputRef?.nativeElement.focus();
+      this.updateSvgPath();
+    }, 150);
+  }
+
+  onHoldCount(): number {
+    return this.allGroups().filter(g => g.deliveryStatus === 'OnHold').length;
+  }
+
+  releaseDeliveries(): void {
+    if (!this.session || this.releasing) return;
+    this.releasing = true;
+    this.api.releaseSessionDeliveries(this.session.sessionId).subscribe({
+      next: (r) => {
+        this.releasing = false;
+        const { released, failed } = r.data;
+        if (failed) {
+          this.notify.error(`${released} posted, ${failed} failed — check Delivery Status`);
+        } else {
+          this.notify.success(`${released} ${released === 1 ? 'delivery' : 'deliveries'} posted to SAP`);
+        }
+        this.refreshSession();
+      },
+      error: (err) => {
+        this.releasing = false;
+        this.notify.error(err.error?.message || 'Failed to release deliveries');
+        this.refreshSession();
+      },
+    });
+  }
+
+  deliveryTag(group: PartyOrder): string {
+    switch (group.deliveryStatus) {
+      case 'OnHold':   return 'On Hold';
+      case 'Success':  return group.sapDocNum ? `SAP #${group.sapDocNum}` : 'Posted';
+      case 'Failed':   return 'SAP Failed';
+      case 'Pending':
+      case 'Released': return 'Posting…';
+      default:         return '';
+    }
+  }
+
   totalItemsCount(): number {
     return this.session?.parties.reduce((s, p) => s + p.items.length, 0) ?? 0;
   }
@@ -714,6 +869,7 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     this.currentItem   = null;
     this.picklistInput = '';
     this.picklistError = '';
+    this.recheckMode   = false;
     this.view          = 'scan-picklist';
     setTimeout(() => this.picklistInputRef?.nativeElement.focus(), 150);
   }
