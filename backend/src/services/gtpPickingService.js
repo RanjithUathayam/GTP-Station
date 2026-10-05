@@ -217,20 +217,23 @@ async function startSession(headerId, operatorId, stationId = 'STN-01') {
         await boxSvc.createBoxPlanForSession(sessionId, headerId, cardCode, docEntry, itemGroupName, totalQty, shipToCode, salesOrderNo);
     }
 
-    // Collect unique parties in seeding order for light-channel assignment
-    const seenParties = [];
-    const seenCodes   = new Set();
+    // Collect unique (CardCode, DocEntry) groups for light-channel assignment — one light per
+    // Customer + Sales Order + Ship-To, so a party with several deliveries gets several lights.
+    // Ordered like the picking board (getSession): parties in arrival order, then DocEntry.
+    const docEntriesByParty = new Map();
     for (const r of rows) {
-        if (!seenCodes.has(r.CardCode)) {
-            seenCodes.add(r.CardCode);
-            seenParties.push({ cardCode: r.CardCode });
-        }
+        if (!docEntriesByParty.has(r.CardCode)) docEntriesByParty.set(r.CardCode, new Set());
+        docEntriesByParty.get(r.CardCode).add(r.DocEntry);
     }
-    // Awaited so the party→channel mapping is fully persisted before the session is
+    const lightGroups = [];
+    for (const [cardCode, docEntries] of docEntriesByParty) {
+        [...docEntries].sort((a, b) => a - b).forEach(docEntry => lightGroups.push({ cardCode, docEntry }));
+    }
+    // Awaited so the group→channel mapping is fully persisted before the session is
     // handed back — otherwise a fast first scan can race ahead of this write and fall
     // through to _rebuildMapping()'s fallback path before the real mapping exists.
     try {
-        await lights.activatePicklistLights(sessionId, stationId, headerId, seenParties);
+        await lights.activatePicklistLights(sessionId, stationId, headerId, lightGroups);
     } catch (err) {
         // Missing config / inactive device / MAC mismatch / init failure must fail session
         // start with a clear message; any other (transient hardware/network) error is
@@ -602,15 +605,17 @@ async function processScan(sessionId, barcode, cardCode, docEntry) {
         // All parties done — turn OFF all channels
         lights.resetStationLights(sessionId)
             .catch(err => console.error('[LIGHTS] resetStationLights error:', err.message));
-    } else if (partyDone) {
-        ws.broadcast('PARTY_COMPLETED', { sessionId, cardCode });
-        // This party is done — turn OFF its channel only
-        lights.handlePartyComplete(sessionId, cardCode)
-            .catch(err => console.error('[LIGHTS] handlePartyComplete error:', err.message));
     } else {
-        // Spotlight: turn ON only this party's channel, all others OFF
-        lights.setActivePartyLight(sessionId, cardCode)
-            .catch(err => console.error('[LIGHTS] setActivePartyLight error:', err.message));
+        if (partyDone) ws.broadcast('PARTY_COMPLETED', { sessionId, cardCode });
+        if (groupDone) {
+            // This delivery group is done — turn OFF its channel only
+            lights.handleGroupComplete(sessionId, cardCode, prog.DocEntry)
+                .catch(err => console.error('[LIGHTS] handleGroupComplete error:', err.message));
+        } else {
+            // Spotlight: turn ON only this group's channel, all others OFF
+            lights.setActiveGroupLight(sessionId, cardCode, prog.DocEntry)
+                .catch(err => console.error('[LIGHTS] setActiveGroupLight error:', err.message));
+        }
     }
 
     ws.broadcast('ITEM_PICKED', {
@@ -655,20 +660,27 @@ async function processScan(sessionId, barcode, cardCode, docEntry) {
 // setActivePartyLight call). The picking-shell UI lets an operator jump straight to a
 // Customer + Sales Order + Ship-To group by clicking its Party Summary card, with no
 // scan involved — without this, the light stays wherever the last *scan* left it and
-// never follows that click. Skips the write entirely if the party is already fully
-// picked, so reviewing a completed party's card never re-lights its (OFF) channel.
-async function setActivePartyLight(sessionId, cardCode) {
+// never follows that click. Lights are per group (CardCode + DocEntry); without a docEntry
+// (older clients) it falls back to the party's first pending group. Skips the write entirely
+// if the group is already fully picked, so reviewing a completed card never re-lights it.
+async function setActivePartyLight(sessionId, cardCode, docEntry) {
     const pool = await getPool();
-    const partyProgRes = await pool.request()
+    const progRes = await pool.request()
         .input('sid', sql.Int,          sessionId)
         .input('cc',  sql.NVarChar(50), cardCode)
-        .query(`SELECT Status FROM GTP_PickProgress WHERE SessionID=@sid AND CardCode=@cc`);
-    if (!partyProgRes.recordset.length) throw Object.assign(
+        .query(`SELECT DocEntry, Status FROM GTP_PickProgress WHERE SessionID=@sid AND CardCode=@cc`);
+    if (!progRes.recordset.length) throw Object.assign(
         new Error(`Party "${cardCode}" not in this session`), { status: 404 }
     );
-    const partyDone = partyProgRes.recordset.every(r => r.Status === 'Completed');
-    if (!partyDone) {
-        await lights.setActivePartyLight(sessionId, cardCode);
+
+    const pendingDocEntries = progRes.recordset
+        .filter(r => r.Status !== 'Completed')
+        .map(r => r.DocEntry);
+    const target = docEntry != null && !Number.isNaN(docEntry)
+        ? (pendingDocEntries.includes(docEntry) ? docEntry : null)
+        : (pendingDocEntries.length ? Math.min(...pendingDocEntries) : null);
+    if (target != null) {
+        await lights.setActiveGroupLight(sessionId, cardCode, target);
     }
 }
 

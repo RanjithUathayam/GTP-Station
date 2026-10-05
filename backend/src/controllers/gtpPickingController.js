@@ -104,9 +104,11 @@ async function resumeSession(req, res, next) {
 
 async function setActiveParty(req, res, next) {
     try {
-        const { cardCode } = req.body;
+        const { cardCode, docEntry } = req.body;
         if (!cardCode) return res.status(400).json({ success: false, message: 'cardCode required' });
-        await svc.setActivePartyLight(parseInt(req.params.sessionId), cardCode);
+        await svc.setActivePartyLight(
+            parseInt(req.params.sessionId), cardCode, docEntry != null ? parseInt(docEntry) : null,
+        );
         res.json({ success: true });
     } catch (err) { next(err); }
 }

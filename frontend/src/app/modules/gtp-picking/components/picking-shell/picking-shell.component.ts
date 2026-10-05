@@ -260,7 +260,10 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   // here (e.g. no ADAM device configured) shouldn't block picking.
   private activatePartyLight(): void {
     if (!this.session || !this.currentParty) return;
-    this.api.setActiveParty(this.session.sessionId, this.currentParty.cardCode).subscribe({
+    // Lights are per Customer + Sales Order + Ship-To group, so send the group's docEntry too.
+    this.api.setActiveParty(
+      this.session.sessionId, this.currentParty.cardCode, this.currentOrder?.docEntry,
+    ).subscribe({
       error: (err) => console.error('[PickingShell] Failed to activate party light', err),
     });
   }
@@ -306,8 +309,8 @@ export class PickingShellComponent implements OnInit, OnDestroy {
     const cR = container.getBoundingClientRect();
     const tR = this.topCardEl.nativeElement.getBoundingClientRect();
 
-    const parties = this.session.parties;
-    const idx     = parties.findIndex(p => p.cardCode === this.currentParty!.cardCode);
+    // Bins are rendered one per group (allGroups()), so point at the current group's bin.
+    const idx     = this.allGroups().findIndex(g => this.isCurrentGroup(g));
     const binArr  = this.binEls.toArray();
     if (idx < 0 || !binArr[idx]) return;
 
@@ -328,6 +331,14 @@ export class PickingShellComponent implements OnInit, OnDestroy {
   // Customer→SalesOrder→ShipTo traversal order (parties, then each party's orders by docEntry).
   allGroups(): PartyOrder[] {
     return this.session?.parties.flatMap(p => p.orders || []) ?? [];
+  }
+
+  isCurrentGroup(group: PartyOrder): boolean {
+    return group.cardCode === this.currentParty?.cardCode && group.docEntry === this.currentOrder?.docEntry;
+  }
+
+  trackGroup(_: number, group: PartyOrder): string {
+    return `${group.cardCode}|${group.docEntry}`;
   }
 
   // Advances to the next pending group — same customer's next order first (since orders are

@@ -101,8 +101,8 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/picking/session/${sessionId}/scan`, { barcode, cardCode, docEntry });
   }
 
-  setActiveParty(sessionId: number, cardCode: string): Observable<{ success: boolean }> {
-    return this.http.post<any>(`${this.base}/picking/session/${sessionId}/active-party`, { cardCode });
+  setActiveParty(sessionId: number, cardCode: string, docEntry?: number): Observable<{ success: boolean }> {
+    return this.http.post<any>(`${this.base}/picking/session/${sessionId}/active-party`, { cardCode, docEntry });
   }
 
   // ─── Box Types + capacity matrix (single source of truth for box capacity) ───

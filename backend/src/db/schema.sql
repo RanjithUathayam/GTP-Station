@@ -231,13 +231,15 @@ CREATE TABLE GTP_StationLightStatus (
     StationId    NVARCHAR(50)  NOT NULL,
     PicklistId   NVARCHAR(50)  NULL,          -- HeaderId of the picklist
     CardCode     NVARCHAR(50)  NOT NULL,
-    PartyId      INT           NOT NULL,       -- 1..4
+    DocEntry     INT           NULL,           -- Sales Order — one light per (CardCode, DocEntry) group
+    PartyId      INT           NOT NULL,       -- group number 1..N (board order)
     Channel      INT           NOT NULL,       -- ADAM DO channel 0..7
     ChannelName  NVARCHAR(10)  NOT NULL,       -- D0..D7
     Status       NVARCHAR(5)   NOT NULL DEFAULT 'OFF',  -- ON | OFF
-    UpdatedTime  DATETIME      NOT NULL DEFAULT GETDATE(),
-    CONSTRAINT UQ_StationLight UNIQUE (SessionID, CardCode)
+    UpdatedTime  DATETIME      NOT NULL DEFAULT GETDATE()
 );
+GO
+CREATE UNIQUE INDEX UQ_StationLight_Group ON GTP_StationLightStatus (SessionID, CardCode, DocEntry);
 GO
 CREATE INDEX IX_StationLight_Session ON GTP_StationLightStatus (SessionID);
 GO

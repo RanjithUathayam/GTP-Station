@@ -285,31 +285,33 @@
             </circle>
           </svg>
 
-          <!-- Party bins row -->
+          <!-- Group bins row — one bin (and one physical light) per Customer + Sales Order + Ship-To -->
           <div class="ptl-bins-row">
             <div class="ptl-bin"
-                 *ngFor="let party of session?.parties; let i = index"
-                 [class.bin-active]="party.cardCode === currentParty?.cardCode"
-                 [class.bin-done]="party.status === 'completed'"
-                 [class.bin-flash]="party.cardCode === currentParty?.cardCode && scanFlash"
+                 *ngFor="let group of allGroups(); trackBy: trackGroup"
+                 [class.bin-active]="isCurrentGroup(group)"
+                 [class.bin-done]="group.status === 'completed'"
+                 [class.bin-flash]="isCurrentGroup(group) && scanFlash"
                  #binEl>
 
-              <ng-container *ngIf="party.cardCode === currentParty?.cardCode; else idleBin">
+              <ng-container *ngIf="isCurrentGroup(group); else idleBin">
                 <div class="bin-qty-label">QTY</div>
                 <div class="bin-qty-val">{{ currentItem ? (currentItem.requiredQty - currentItem.pickedQty) : 0 }}</div>
-                <div class="bin-name">{{ party.cardName }}</div>
-                <div class="bin-code">{{ party.cardCode }}</div>
+                <div class="bin-name">{{ group.cardName }}</div>
+                <div class="bin-code">{{ group.cardCode }}</div>
+                <div class="bin-code" *ngIf="group.shipToCode">{{ group.shipToCode }}</div>
                 <div class="bin-active-bar"></div>
               </ng-container>
 
               <ng-template #idleBin>
                 <mat-icon class="bin-status-icon"
-                  [class.bin-icon-done]="party.status === 'completed'"
-                  [class.bin-icon-wait]="party.status !== 'completed'">
-                  {{ party.status === 'completed' ? 'check_circle' : 'hourglass_empty' }}
+                  [class.bin-icon-done]="group.status === 'completed'"
+                  [class.bin-icon-wait]="group.status !== 'completed'">
+                  {{ group.status === 'completed' ? 'check_circle' : 'hourglass_empty' }}
                 </mat-icon>
-                <div class="bin-name">{{ party.cardName }}</div>
-                <div class="bin-code">{{ party.cardCode }}</div>
+                <div class="bin-name">{{ group.cardName }}</div>
+                <div class="bin-code">{{ group.cardCode }}</div>
+                <div class="bin-code" *ngIf="group.shipToCode">{{ group.shipToCode }}</div>
               </ng-template>
 
             </div>
